@@ -4,6 +4,6 @@
   };  */ 
     export const environment = {
     production: true,
-    apiUrl: 'https://api.ecosdeloraculo.com/',
+    apiUrl: 'https://api.ecosoraculo.com/',
   };  
   
