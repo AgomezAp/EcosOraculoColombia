@@ -1,13 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
     <!-- Google tag (gtag.js) -->
     <script
       async
-      src="https://www.googletagmanager.com/gtag/js?id=GT-K5QNXGSM"
+      src="https://www.googletagmanager.com/gtag/js?id=G-HW2QWG5Z9M"
     ></script>
     <script>
       window.dataLayer = window.dataLayer || [];
@@ -15,8 +12,13 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-      gtag("config", "GT-K5QNXGSM");
+
+      gtag("config", "G-HW2QWG5Z9M");
     </script>
+
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -28,15 +30,15 @@
         j.async = true;
         j.src = "https://www.googletagmanager.com/gtm.js?id=" + i + dl;
         f.parentNode.insertBefore(j, f);
-      })(window, document, "script", "dataLayer", "GTM-NM5V9XQ2");
+      })(window, document, "script", "dataLayer", "GTM-WXHHTDK2");
     </script>
-    <!-- End Google Tag Manager -->
+    <!-- End Google Tag Manager -->
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
     <noscript
       ><iframe
-        src="https://www.googletagmanager.com/ns.html?id=GTM-NM5V9XQ2"
+        src="https://www.googletagmanager.com/ns.html?id=GTM-WXHHTDK2"
         height="0"
         width="0"
         style="display: none; visibility: hidden"
@@ -143,8 +145,8 @@
                       <span class="lock-icon">🔒</span>
                       <p><strong>Contenido Premium</strong></p>
                       <p>
-                        Paga 4.00€ para ver esta orientación vocacional y acceder a
-                        consultas ilimitadas
+                        Paga 4.00€ para ver esta orientación vocacional y
+                        acceder a consultas ilimitadas
                       </p>
                       <button
                         (click)="promptForPayment()"
@@ -263,7 +265,7 @@
                 <div class="payment-actions">
                   <button
                     (click)="handlePaymentSubmit()"
-                    [disabled]="isProcessingPayment "
+                    [disabled]="isProcessingPayment"
                     class="pay-button"
                   >
                     <span *ngIf="!isProcessingPayment"
