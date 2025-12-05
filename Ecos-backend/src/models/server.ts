@@ -53,8 +53,8 @@ class Server {
     // CORS debe ir PRIMERO, antes de cualquier otro middleware
     this.app.use((req, res, next) => {
       const allowedOrigins = [
-        "https://ecosdeloraculo.com",
-        "https://www.ecosdeloraculo.com",
+        "https://ecosoraculo.com",
+        "https://www.ecosoraculo.com",
         "http://localhost:4200",
         "http://localhost:3010",
       ];
