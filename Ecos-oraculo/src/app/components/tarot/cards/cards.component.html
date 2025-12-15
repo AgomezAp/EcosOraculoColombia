@@ -84,56 +84,5 @@
       (onModalClosed)="onDataModalClosed()"
     >
     </app-recolecta-datos>
-
-    <!-- ========== MODAL DE PAGO PAYPAL ========== -->
-    <div *ngIf="showPaymentModal" class="payment-modal-overlay">
-      <div class="payment-modal-content">
-        <h3 class="payment-modal-title">🔮 Completa tu Lectura de Tarot</h3>
-
-        <p class="modal-text">
-          Para revelar las descripciones detalladas de tus cartas y lo que los
-          astros tienen para ti, realiza una pequeña contribución de 4.00€
-        </p>
-
-        <!-- Loading State -->
-        <div *ngIf="isProcessingPayment" class="loading-container">
-          <div class="spinner"></div>
-          <p class="loading-text">Preparando el pago...</p>
-        </div>
-
-        <!-- Error Message -->
-        <div *ngIf="paymentError" class="payment-error-message">
-          <i class="fa fa-exclamation-circle"></i>
-          <p>{{ paymentError }}</p>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="modal-actions">
-          <button
-            *ngIf="!isProcessingPayment"
-            (click)="handlePaymentSubmit()"
-            class="pay-button"
-          >
-            <i class="fa fa-lock"></i>
-            Pagar 4.00€
-          </button>
-
-          <button
-            (click)="cancelPayment()"
-            class="cancel-button"
-            [disabled]="isProcessingPayment"
-          >
-            <i class="fa fa-times"></i>
-            Cancelar
-          </button>
-        </div>
-
-        <!-- Security Badge -->
-        <div class="security-badge">
-          <i class="fa fa-shield-alt"></i>
-          <span>Pago seguro con PayPal</span>
-        </div>
-      </div>
-    </div>
   </body>
 </html>

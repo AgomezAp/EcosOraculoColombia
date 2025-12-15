@@ -25,6 +25,7 @@ const zodiaco_chino_1 = __importDefault(require("../routes/zodiaco-chino"));
 const calculadora_amor_1 = __importDefault(require("../routes/calculadora-amor"));
 const Pagos_1 = __importDefault(require("../routes/Pagos"));
 const paypal_1 = __importDefault(require("../routes/paypal"));
+const mercadopago_1 = __importDefault(require("../routes/mercadopago"));
 const recolecta_1 = __importDefault(require("../routes/recolecta"));
 const recolecta_datos_1 = require("./recolecta-datos");
 const page_views_1 = require("./page_views");
@@ -61,10 +62,11 @@ class Server {
         // CORS debe ir PRIMERO, antes de cualquier otro middleware
         this.app.use((req, res, next) => {
             const allowedOrigins = [
-                "https://ecosdeloraculo.com",
-                "https://www.ecosdeloraculo.com",
+                "https://ecosoraculo.com",
+                "https://www.ecosoraculo.com",
                 "http://localhost:4200",
                 "http://localhost:3010",
+                "https://d9fa48254b53.ngrok-free.app"
             ];
             const origin = req.headers.origin;
             if (origin && allowedOrigins.includes(origin)) {
@@ -100,6 +102,7 @@ class Server {
         this.app.use(calculadora_amor_1.default);
         this.app.use(Pagos_1.default);
         this.app.use("/api/paypal", paypal_1.default);
+        this.app.use("/api/mercadopago", mercadopago_1.default);
         this.app.use(recolecta_1.default);
         this.app.use(analytics_1.default);
         this.app.use(sugerencia_1.default);

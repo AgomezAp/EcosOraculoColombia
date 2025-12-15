@@ -13,6 +13,7 @@ import zodiacoChino from "../routes/zodiaco-chino";
 import calculadoraAmor from "../routes/calculadora-amor";
 import RPagos from "../routes/Pagos";
 import RPaypal from "../routes/paypal";
+import RMercadoPago from "../routes/mercadopago";
 import Recolecta from "../routes/recolecta";
 import { recolecta } from "./recolecta-datos";
 import { PageAnalytics } from "./page_views";
@@ -57,6 +58,7 @@ class Server {
         "https://www.ecosoraculo.com",
         "http://localhost:4200",
         "http://localhost:3010",
+        "https://d9fa48254b53.ngrok-free.app"
       ];
 
       const origin = req.headers.origin;
@@ -104,6 +106,7 @@ class Server {
     this.app.use(calculadoraAmor);
     this.app.use(RPagos);
     this.app.use("/api/paypal", RPaypal);
+    this.app.use("/api/mercadopago", RMercadoPago);
     this.app.use(Recolecta);
     this.app.use(RAnalytics);
     this.app.use(sugerencia);

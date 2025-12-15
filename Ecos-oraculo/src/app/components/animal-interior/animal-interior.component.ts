@@ -21,9 +21,12 @@ import {
   AnimalGuideData,
   AnimalInteriorService,
 } from '../../services/animal-interior.service';
-import { PaypalService } from '../../services/paypal.service';
+import { MercadopagoService } from '../../services/mercadopago.service';
 import { HttpClient } from '@angular/common/http';
-import { RecolectaDatosComponent } from '../recolecta-datos/recolecta-datos.component';
+import {
+  RecolectaDatosComponent,
+  ServiceConfig,
+} from '../recolecta-datos/recolecta-datos.component';
 import { environment } from '../../environments/environmets.prod';
 import {
   FortuneWheelComponent,
@@ -42,6 +45,7 @@ interface ChatMessage {
   isUser: boolean;
   id?: string;
 }
+
 @Component({
   selector: 'app-animal-interior',
   imports: [
@@ -53,7 +57,6 @@ interface ChatMessage {
     MatInputModule,
     MatProgressSpinnerModule,
     RecolectaDatosComponent,
-    FortuneWheelComponent,
   ],
   templateUrl: './animal-interior.component.html',
   styleUrl: './animal-interior.component.css',
@@ -63,13 +66,24 @@ export class AnimalInteriorComponent
   implements OnInit, OnDestroy, AfterViewChecked, AfterViewInit
 {
   @ViewChild('chatContainer') chatContainer!: ElementRef;
+  @ViewChild('backgroundVideo') backgroundVideo!: ElementRef<HTMLVideoElement>;
 
   chatMessages: ChatMessage[] = [];
   currentMessage: string = '';
   isLoading: boolean = false;
-  //Datos para enviar
+
+  // Datos para enviar
   showDataModal: boolean = false;
   userData: any = null;
+
+  animalServiceConfig: ServiceConfig = {
+    serviceId: '6', // ID del servicio animal-interior en el backend
+    serviceName: 'Animal Interior - Guía Espiritual',
+    amount: 15000, // $15,000 COP
+    description:
+      'Acceso completo a consultas ilimitadas con Xamán Kiara sobre tu animal interior',
+  };
+
   // Propiedades para controlar el scroll
   private shouldScrollToBottom: boolean = true;
   private isUserScrolling: boolean = false;
@@ -81,7 +95,8 @@ export class AnimalInteriorComponent
     specialty: 'Guía de los Animales Internos',
     experience: 'Especialista en conexión espiritual con el reino animal',
   };
-  //Propiedades para la ruleta
+
+  // Propiedades para la ruleta
   showFortuneWheel: boolean = false;
   animalPrizes: Prize[] = [
     {
@@ -104,75 +119,148 @@ export class AnimalInteriorComponent
     },
   ];
   private wheelTimer: any;
-  // Stripe/payment
+
+  // ✅ MercadoPago (reemplaza Stripe/PayPal)
   showPaymentModal: boolean = false;
-  clientSecret: string | null = null;
   isProcessingPayment: boolean = false;
   paymentError: string | null = null;
   hasUserPaidForAnimal: boolean = false;
-  firstQuestionAsked: boolean = false;
   blockedMessageId: string | null = null;
+
+  // ✅ NUEVO: Contador de mensajes del usuario para lógica del 3er mensaje
+  userMessageCount: number = 0;
+  private readonly MESSAGES_BEFORE_PAYMENT: number = 3; // Mostrar modal al 3er mensaje
+
   private backendUrl = environment.apiUrl;
 
   constructor(
     private animalService: AnimalInteriorService,
     private http: HttpClient,
     private cdr: ChangeDetectorRef,
-    private paypalService: PaypalService
+    private mercadopagoService: MercadopagoService
   ) {}
-  @ViewChild('backgroundVideo') backgroundVideo!: ElementRef<HTMLVideoElement>;
 
   ngAfterViewInit(): void {
-    // Ajusta la velocidad del video de fondo (0.5 = la mitad de velocidad)
     if (this.backgroundVideo && this.backgroundVideo.nativeElement) {
       this.backgroundVideo.nativeElement.playbackRate = 0.6;
     }
   }
 
   async ngOnInit(): Promise<void> {
+    console.log('🦉 ====== INICIANDO ANIMAL INTERIOR ======');
+
+    // ✅ PASO 1: Verificar si ya está pagado (desde sessionStorage)
     this.hasUserPaidForAnimal =
-      sessionStorage.getItem('hasUserPaidForAnimal_inneresTier') === 'true';
+      sessionStorage.getItem('hasUserPaidForAnimal_inneresTier') === 'true' ||
+      this.mercadopagoService.isServicePaid('6');
 
-    const paymentStatus = this.paypalService.checkPaymentStatusFromUrl();
+    console.log('📊 Estado de pago inicial:', this.hasUserPaidForAnimal);
 
-    if (paymentStatus && paymentStatus.status === 'COMPLETED') {
-      try {
-        const verification = await this.paypalService.verifyAndProcessPayment(
-          paymentStatus.token
-        );
+    // ✅ PASO 2: Verificar si viene de MercadoPago (tiene parámetros en URL)
+    if (this.mercadopagoService.hasPaymentParams()) {
+      console.log('🔄 Detectados parámetros de pago en URL');
 
-        if (verification.valid && verification.status === 'approved') {
-          this.hasUserPaidForAnimal = true;
-          sessionStorage.setItem('hasUserPaidForAnimal_inneresTier', 'true');
-          localStorage.removeItem('paypal_payment_completed');
+      const paymentStatus = this.mercadopagoService.checkPaymentStatusFromUrl();
 
-          this.blockedMessageId = null;
-          sessionStorage.removeItem('animalInteriorBlockedMessageId');
+      if (paymentStatus.isPaid && paymentStatus.status === 'approved') {
+        console.log('✅ ¡PAGO APROBADO!');
+        console.log('  - Payment ID:', paymentStatus.paymentId);
+        console.log('  - Service ID:', paymentStatus.serviceId);
 
-          // Clear URL
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
+        // ✅ GUARDAR ESTADO DE PAGO
+        this.hasUserPaidForAnimal = true;
+        sessionStorage.setItem('hasUserPaidForAnimal_inneresTier', 'true');
+        this.mercadopagoService.saveServicePaymentStatus('6', true);
 
-          this.addMessage({
-            sender: this.guideData.name,
-            content:
-              '✨ ¡Pago confirmado! Ahora puedes acceder a toda mi experiencia.',
-            timestamp: new Date(),
-            isUser: false,
-          });
+        // Desbloquear mensajes
+        this.blockedMessageId = null;
+        sessionStorage.removeItem('animalInteriorBlockedMessageId');
 
-          this.cdr.markForCheck();
+        // Recuperar datos guardados antes del pago
+        const savedData = this.mercadopagoService.getPaymentData();
+        if (savedData) {
+          console.log('📦 Recuperando datos guardados:', savedData);
+
+          // Recuperar mensajes del chat
+          if (savedData.chatMessages && savedData.chatMessages.length > 0) {
+            this.chatMessages = savedData.chatMessages.map((msg: any) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp),
+            }));
+            console.log('💬 Mensajes recuperados:', this.chatMessages.length);
+          }
+
+          // Recuperar contador de mensajes
+          if (savedData.userMessageCount !== undefined) {
+            this.userMessageCount = savedData.userMessageCount;
+          }
+
+          // Recuperar datos de usuario
+          if (savedData.userData) {
+            this.userData = savedData.userData;
+            sessionStorage.setItem(
+              'userData',
+              JSON.stringify(savedData.userData)
+            );
+          }
         }
-      } catch (error) {
-        console.error('Error verificando pago de PayPal:', error);
-        this.paymentError = 'Error en la verificación del pago';
+
+        // Limpiar datos de pago temporal
+        this.mercadopagoService.clearPaymentData();
+
+        // Limpiar parámetros de la URL
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
+
+        // Agregar mensaje de confirmación de pago
+        this.addMessage({
+          sender: this.guideData.name,
+          content: `✨ **¡Pago confirmado exitosamente!** ✨
+
+🦉 Ahora tienes acceso completo e ilimitado a mi sabiduría sobre el reino animal. 
+
+Los espíritus animales te dan la bienvenida. Puedes preguntarme lo que desees sobre tu animal interior, conexiones espirituales y todos los misterios ancestrales.
+
+¿En qué puedo ayudarte?`,
+          timestamp: new Date(),
+          isUser: false,
+        });
+
+        this.saveMessagesToSession();
+
+        // Procesar mensaje pendiente si existe
+        const pendingMessage = sessionStorage.getItem('pendingAnimalMessage');
+        if (pendingMessage) {
+          console.log('📨 Procesando mensaje pendiente:', pendingMessage);
+          sessionStorage.removeItem('pendingAnimalMessage');
+          setTimeout(() => {
+            this.processUserMessage(pendingMessage);
+          }, 2000);
+        }
+
+        this.cdr.markForCheck();
+        return; // Salir aquí, ya procesamos todo
+      } else if (paymentStatus.status === 'pending') {
+        console.log('⏳ Pago pendiente');
+        this.addMessage({
+          sender: this.guideData.name,
+          content:
+            '⏳ Tu pago está siendo procesado. Te notificaremos cuando se confirme.',
+          timestamp: new Date(),
+          isUser: false,
+        });
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
+      } else if (
+        paymentStatus.status === 'rejected' ||
+        paymentStatus.status === 'failure'
+      ) {
+        console.log('❌ Pago rechazado o fallido');
+        this.paymentError =
+          'El pago no se pudo completar. Por favor, intenta nuevamente.';
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
       }
     }
 
-    // ✅ NUEVO: Cargar datos del usuario desde sessionStorage
+    // ✅ PASO 3: Cargar datos del usuario desde sessionStorage
     const savedUserData = sessionStorage.getItem('userData');
     if (savedUserData) {
       try {
@@ -180,43 +268,85 @@ export class AnimalInteriorComponent
       } catch (error) {
         this.userData = null;
       }
-    } else {
-      this.userData = null;
     }
 
-    const savedMessages = sessionStorage.getItem('animalInteriorMessages');
-    const savedFirstQuestion = sessionStorage.getItem(
-      'animalInteriorFirstQuestionAsked'
-    );
-    const savedBlockedMessageId = sessionStorage.getItem(
-      'animalInteriorBlockedMessageId'
-    );
+    // ✅ PASO 4: Cargar mensajes guardados (si no vienen del pago)
+    if (this.chatMessages.length === 0) {
+      const savedMessages = sessionStorage.getItem('animalInteriorMessages');
+      const savedMessageCount = sessionStorage.getItem(
+        'animalInteriorUserMessageCount'
+      );
+      const savedBlockedMessageId = sessionStorage.getItem(
+        'animalInteriorBlockedMessageId'
+      );
 
-    if (savedMessages) {
-      try {
-        const parsedMessages = JSON.parse(savedMessages);
-        this.chatMessages = parsedMessages.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        }));
-        this.firstQuestionAsked = savedFirstQuestion === 'true';
-        this.blockedMessageId = savedBlockedMessageId || null;
-        this.lastMessageCount = this.chatMessages.length;
-      } catch (error) {
-        // Limpiar datos corruptos
+      if (savedMessages) {
+        try {
+          const parsedMessages = JSON.parse(savedMessages);
+          this.chatMessages = parsedMessages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+          }));
+          this.userMessageCount = parseInt(savedMessageCount || '0');
+          this.blockedMessageId = savedBlockedMessageId || null;
+          this.lastMessageCount = this.chatMessages.length;
+        } catch (error) {
+          console.error('Error parseando mensajes:', error);
+          this.initializeWelcomeMessage();
+        }
+      } else {
         this.initializeWelcomeMessage();
       }
     }
 
-    if (this.chatMessages.length === 0) {
-      this.initializeWelcomeMessage();
+    // ✅ PASO 5: Si ya pagó, desbloquear todo
+    if (this.hasUserPaidForAnimal && this.blockedMessageId) {
+      this.blockedMessageId = null;
+      sessionStorage.removeItem('animalInteriorBlockedMessageId');
     }
 
+    // Mostrar ruleta si aplica
     if (this.chatMessages.length > 0 && FortuneWheelComponent.canShowWheel()) {
       this.showAnimalWheelAfterDelay(2000);
     }
+
+    this.cdr.markForCheck();
   }
+
+  private cleanUrlParams(): void {
+    const url = new URL(window.location.href);
+    const paramsToRemove = [
+      'status',
+      'collection_status',
+      'payment_id',
+      'collection_id',
+      'external_reference',
+      'payment_type',
+      'merchant_order_id',
+      'preference_id',
+      'site_id',
+      'processing_mode',
+      'merchant_account_id',
+      'service',
+    ];
+
+    let hasParams = false;
+    paramsToRemove.forEach((param) => {
+      if (url.searchParams.has(param)) {
+        url.searchParams.delete(param);
+        hasParams = true;
+      }
+    });
+
+    if (hasParams) {
+      window.history.replaceState({}, document.title, url.pathname);
+    }
+  }
+
   private initializeWelcomeMessage(): void {
+    this.userMessageCount = 0;
+    sessionStorage.setItem('animalInteriorUserMessageCount', '0');
+
     this.addMessage({
       sender: 'Chamana Olivia',
       content: `🦉 ¡Hola, Buscador! Soy Olivia, tu guía espiritual del reino animal. Estoy aquí para ayudarte a descubrir tu animal interior y conectar con él.
@@ -228,11 +358,10 @@ export class AnimalInteriorComponent
 
     if (FortuneWheelComponent.canShowWheel()) {
       this.showAnimalWheelAfterDelay(3000);
-    } else {
     }
   }
+
   ngAfterViewChecked(): void {
-    // Solo hacer scroll automático si hay nuevos mensajes y el usuario no está haciendo scroll manual
     if (
       this.shouldScrollToBottom &&
       !this.isUserScrolling &&
@@ -249,46 +378,65 @@ export class AnimalInteriorComponent
       clearTimeout(this.wheelTimer);
     }
   }
+
   sendMessage(): void {
     if (!this.currentMessage.trim() || this.isLoading) return;
+
     const userMessage = this.currentMessage.trim();
 
-    // ✅ NUEVA LÓGICA: Verificar consultas animales gratuitas ANTES de verificar pago
-    if (!this.hasUserPaidForAnimal && this.firstQuestionAsked) {
-      // Verificar si tiene consultas animales gratis disponibles
-      if (this.hasFreeAnimalConsultationsAvailable()) {
-        this.useFreeAnimalConsultation();
-        // Continuar con el mensaje sin bloquear
-      } else {
-        // Si no tiene consultas gratis, mostrar modal de datos
-
-        // Cerrar otros modales primero
-        this.showFortuneWheel = false;
-        this.showPaymentModal = false;
-
-        // Guardar el mensaje para procesarlo después del pago
-        sessionStorage.setItem('pendingAnimalMessage', userMessage);
-
-        this.saveStateBeforePayment();
-
-        // Mostrar modal de datos con timeout
-        setTimeout(() => {
-          this.showDataModal = true;
-          this.cdr.markForCheck();
-        }, 100);
-
-        return; // Salir aquí para no procesar el mensaje aún
-      }
+    // ✅ Si ya pagó, procesar mensaje directamente
+    if (this.hasUserPaidForAnimal) {
+      this.shouldScrollToBottom = true;
+      this.processUserMessage(userMessage);
+      return;
     }
 
-    this.shouldScrollToBottom = true;
+    // ✅ Verificar consultas gratis
+    if (this.hasFreeAnimalConsultationsAvailable()) {
+      this.useFreeAnimalConsultation();
+      this.shouldScrollToBottom = true;
+      this.processUserMessage(userMessage);
+      return;
+    }
 
-    // Procesar mensaje normalmente
+    // ✅ Verificar si es el 3er mensaje o posterior
+    if (this.userMessageCount >= this.MESSAGES_BEFORE_PAYMENT - 1) {
+      // Cerrar otros modales
+      this.showFortuneWheel = false;
+      this.showPaymentModal = false;
+
+      // Guardar mensaje pendiente
+      sessionStorage.setItem('pendingAnimalMessage', userMessage);
+
+      // Guardar estado antes del pago
+      this.saveStateBeforePayment();
+
+      // Mostrar modal de datos
+      setTimeout(() => {
+        this.showDataModal = true;
+        this.cdr.markForCheck();
+      }, 100);
+
+      return;
+    }
+
+    // Procesar mensaje normalmente (mensajes 1 y 2)
+    this.shouldScrollToBottom = true;
     this.processUserMessage(userMessage);
   }
+
   private processUserMessage(userMessage: string): void {
+    // Incrementar contador de mensajes del usuario
+    this.userMessageCount++;
+    sessionStorage.setItem(
+      'animalInteriorUserMessageCount',
+      this.userMessageCount.toString()
+    );
+
+    console.log(`📨 Mensaje del usuario #${this.userMessageCount}`);
+
     this.addMessage({
-      sender: 'Du',
+      sender: 'Tú',
       content: userMessage,
       timestamp: new Date(),
       isUser: true,
@@ -297,13 +445,11 @@ export class AnimalInteriorComponent
     this.currentMessage = '';
     this.isLoading = true;
 
-    // Preparar conversationHistory para tu servicio
     const conversationHistory = this.chatMessages.slice(-10).map((msg) => ({
       role: msg.isUser ? ('user' as const) : ('guide' as const),
       message: msg.content,
     }));
 
-    // Preparar el request según tu interfaz
     const chatRequest: AnimalChatRequest = {
       guideData: this.guideData,
       userMessage: userMessage,
@@ -318,41 +464,37 @@ export class AnimalInteriorComponent
         if (response.success && response.response) {
           const messageId = Date.now().toString();
           this.addMessage({
-            sender: 'Chaman Olivia',
+            sender: 'Chamana Olivia',
             content: response.response,
             timestamp: new Date(),
             isUser: false,
             id: messageId,
           });
 
-          // ✅ LÓGICA MODIFICADA: Solo bloquear si no tiene consultas gratis Y no ha pagado
+          // ✅ Verificar si debe bloquear después del 3er mensaje
           if (
-            this.firstQuestionAsked &&
             !this.hasUserPaidForAnimal &&
-            !this.hasFreeAnimalConsultationsAvailable()
+            !this.hasFreeAnimalConsultationsAvailable() &&
+            this.userMessageCount >= this.MESSAGES_BEFORE_PAYMENT
           ) {
             this.blockedMessageId = messageId;
             sessionStorage.setItem('animalInteriorBlockedMessageId', messageId);
+
+            // Mostrar modal de pago después de 2 segundos
             setTimeout(() => {
               this.saveStateBeforePayment();
-
-              // Cerrar otros modales
               this.showFortuneWheel = false;
               this.showPaymentModal = false;
 
-              // Mostrar modal de datos
               setTimeout(() => {
                 this.showDataModal = true;
                 this.cdr.markForCheck();
               }, 100);
             }, 2000);
-          } else if (!this.firstQuestionAsked) {
-            this.firstQuestionAsked = true;
-            sessionStorage.setItem('animalInteriorFirstQuestionAsked', 'true');
           }
         } else {
           this.addMessage({
-            sender: 'Chaman Olivia',
+            sender: 'Chamana Olivia',
             content:
               '🦉 Lo siento, no pude conectarme con la sabiduría animal en este momento. Inténtalo de nuevo.',
             timestamp: new Date(),
@@ -363,10 +505,11 @@ export class AnimalInteriorComponent
         this.cdr.markForCheck();
       },
       error: (error) => {
+        console.error('Error en chat:', error);
         this.isLoading = false;
         this.shouldScrollToBottom = true;
         this.addMessage({
-          sender: 'Chaman Olivia',
+          sender: 'Chamana Olivia',
           content:
             '🦉 Hubo un error en la conexión espiritual. Inténtalo de nuevo.',
           timestamp: new Date(),
@@ -377,18 +520,40 @@ export class AnimalInteriorComponent
       },
     });
   }
+
   private saveStateBeforePayment(): void {
     this.saveMessagesToSession();
+
+    // Guardar contador
     sessionStorage.setItem(
-      'animalInteriorFirstQuestionAsked',
-      this.firstQuestionAsked.toString()
+      'animalInteriorUserMessageCount',
+      this.userMessageCount.toString()
     );
+
+    // Guardar mensaje bloqueado si existe
     if (this.blockedMessageId) {
       sessionStorage.setItem(
         'animalInteriorBlockedMessageId',
         this.blockedMessageId
       );
     }
+
+    // ✅ IMPORTANTE: Guardar datos para MercadoPago
+    const paymentData = {
+      chatMessages: this.chatMessages.map((msg) => ({
+        ...msg,
+        timestamp:
+          msg.timestamp instanceof Date
+            ? msg.timestamp.toISOString()
+            : msg.timestamp,
+      })),
+      userMessageCount: this.userMessageCount,
+      userData: this.userData,
+      blockedMessageId: this.blockedMessageId,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.mercadopagoService.savePaymentData(paymentData);
   }
 
   private saveMessagesToSession(): void {
@@ -404,18 +569,21 @@ export class AnimalInteriorComponent
         'animalInteriorMessages',
         JSON.stringify(messagesToSave)
       );
-    } catch {}
+    } catch (error) {
+      console.error('Error guardando mensajes:', error);
+    }
   }
 
   isMessageBlocked(message: ChatMessage): boolean {
     return message.id === this.blockedMessageId && !this.hasUserPaidForAnimal;
   }
 
+  // ✅ MÉTODO ACTUALIZADO PARA MERCADOPAGO
   async promptForPayment(): Promise<void> {
     this.showPaymentModal = true;
-    this.cdr.markForCheck();
     this.paymentError = null;
     this.isProcessingPayment = false;
+    this.cdr.markForCheck();
 
     // Validar datos de usuario
     if (!this.userData) {
@@ -429,44 +597,62 @@ export class AnimalInteriorComponent
       }
     }
 
-    if (!this.userData) {
+    if (!this.userData || !this.userData.email) {
       this.paymentError =
         'No se encontraron datos del cliente. Por favor, complete el formulario primero.';
+      this.showPaymentModal = false;
       this.showDataModal = true;
       this.cdr.markForCheck();
       return;
-    }
-
-    const email = this.userData.email?.toString().trim();
-    if (!email) {
-      this.paymentError =
-        'Correo electrónico requerido. Por favor, complete el formulario.';
-      this.showDataModal = true;
-      this.cdr.markForCheck();
-      return;
-    }
-    // Guardar mensaje pendiente si existe
-    if (this.currentMessage) {
-      sessionStorage.setItem('pendingAnimalMessage', this.currentMessage);
     }
   }
 
+  // ✅ MÉTODO ACTUALIZADO PARA MERCADOPAGO
   async handlePaymentSubmit(): Promise<void> {
     this.isProcessingPayment = true;
     this.paymentError = null;
     this.cdr.markForCheck();
 
     try {
-      await this.paypalService.initiatePayment({
-        amount: '4.00',
-        currency: 'EUR',
-        serviceName: 'Animal interior',
-        returnPath: '/animal-interior',
-        cancelPath: '/animal-interior',
+      // Guardar datos antes de redirigir a MercadoPago
+      const paymentData = {
+        chatMessages: this.chatMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        userMessageCount: this.userMessageCount,
+        userData: this.userData,
+        blockedMessageId: this.blockedMessageId,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.mercadopagoService.savePaymentData(paymentData);
+
+      // Crear orden de MercadoPago
+      const order = await this.mercadopagoService.createOrder({
+        amount: 15000, // $15,000 COP
+        serviceName: 'Animal Interior - Guía Espiritual',
+        serviceId: '6', // ID del servicio animal-interior
+        firstName: this.userData.firstName || 'Usuario',
+        lastName: this.userData.lastName || 'Ecos',
+        email: this.userData.email,
+        categoryId: 'services',
+        description:
+          'Acceso completo a consultas ilimitadas con Xamán Kiara sobre tu animal interior',
       });
+
+      console.log('✅ Orden de MercadoPago creada:', order);
+
+      // Redirigir a MercadoPago
+      const paymentUrl = order.sandbox_init_point || order.init_point;
+      this.mercadopagoService.redirectToPayment(paymentUrl);
     } catch (error: any) {
+      console.error('❌ Error al crear orden de MercadoPago:', error);
       this.paymentError =
-        error.message || 'Error al inicializar el pago con PayPal.';
+        error.message || 'Error al inicializar el pago. Intenta nuevamente.';
       this.isProcessingPayment = false;
       this.cdr.markForCheck();
     }
@@ -488,17 +674,11 @@ export class AnimalInteriorComponent
     if (!content) return '';
 
     let formattedContent = content;
-
-    // Convertir **texto** a <strong>texto</strong> para negrilla
     formattedContent = formattedContent.replace(
       /\*\*(.*?)\*\*/g,
       '<strong>$1</strong>'
     );
-
-    // Convertir saltos de línea a <br> para mejor visualización
     formattedContent = formattedContent.replace(/\n/g, '<br>');
-
-    // Opcional: También puedes manejar *texto* (una sola asterisco) como cursiva
     formattedContent = formattedContent.replace(
       /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
       '<em>$1</em>'
@@ -511,7 +691,7 @@ export class AnimalInteriorComponent
     try {
       const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
       if (isNaN(date.getTime())) return 'N/A';
-      return date.toLocaleTimeString('de-DE', {
+      return date.toLocaleTimeString('es-CO', {
         hour: '2-digit',
         minute: '2-digit',
       });
@@ -537,21 +717,14 @@ export class AnimalInteriorComponent
     const element = event.target;
     const isAtBottom =
       element.scrollHeight - element.scrollTop === element.clientHeight;
-
-    // Si el usuario no está en el fondo, está haciendo scroll manual
     this.isUserScrolling = !isAtBottom;
-
-    // Si el usuario vuelve al fondo, permitir scroll automático nuevamente
     if (isAtBottom) {
       this.isUserScrolling = false;
     }
   }
 
   onUserStartScroll(): void {
-    // Indicar que el usuario está haciendo scroll manual
     this.isUserScrolling = true;
-
-    // Después de 3 segundos sin actividad, permitir scroll automático nuevamente
     setTimeout(() => {
       if (this.chatContainer) {
         const element = this.chatContainer.nativeElement;
@@ -574,25 +747,19 @@ export class AnimalInteriorComponent
   }
 
   clearChat(): void {
-    // Limpiar mensajes del chat
     this.chatMessages = [];
     this.currentMessage = '';
     this.lastMessageCount = 0;
-
-    // Resetear estados
-    this.firstQuestionAsked = false;
+    this.userMessageCount = 0;
     this.blockedMessageId = null;
     this.isLoading = false;
 
-    // Limpiar sessionStorage
     sessionStorage.removeItem('animalInteriorMessages');
-    sessionStorage.removeItem('animalInteriorFirstQuestionAsked');
+    sessionStorage.removeItem('animalInteriorUserMessageCount');
     sessionStorage.removeItem('animalInteriorBlockedMessageId');
 
-    // Indicar que se debe hacer scroll porque hay un mensaje nuevo
     this.shouldScrollToBottom = true;
 
-    // Agregar mensaje de bienvenida inicial
     this.addMessage({
       sender: 'Chamana Olivia',
       content: `🦉 ¡Hola, Buscador! Soy Olivia, tu guía espiritual del reino animal. Estoy aquí para ayudarte a descubrir tu animal interior y conectar con él.
@@ -601,65 +768,32 @@ export class AnimalInteriorComponent
       timestamp: new Date(),
       isUser: false,
     });
+
     if (FortuneWheelComponent.canShowWheel()) {
       this.showAnimalWheelAfterDelay(3000);
-    } else {
     }
   }
+
+  // ✅ MÉTODO ACTUALIZADO PARA MERCADOPAGO
   onUserDataSubmitted(userData: any): void {
-    // ✅ VALIDAR CAMPOS CRÍTICOS ANTES DE PROCEDER
-    const requiredFields = ['email']; // ❌ QUITADO 'apellido'
-    const missingFields = requiredFields.filter(
-      (field) => !userData[field] || userData[field].toString().trim() === ''
-    );
+    console.log('📋 Datos del usuario recibidos:', userData);
 
-    if (missingFields.length > 0) {
-      alert(
-        `Para continuar con el pago, debes completar lo siguiente: ${missingFields.join(
-          ', '
-        )}`
-      );
-      this.showDataModal = true; // Mantener modal abierto
-      this.cdr.markForCheck();
-      return;
-    }
+    // Guardar datos
+    this.userData = userData;
+    sessionStorage.setItem('userData', JSON.stringify(userData));
 
-    // ✅ LIMPIAR Y GUARDAR datos INMEDIATAMENTE en memoria Y sessionStorage
-    this.userData = {
-      ...userData,
-      email: userData.email?.toString().trim(),
-    };
-
-    // ✅ GUARDAR EN sessionStorage INMEDIATAMENTE
-    try {
-      sessionStorage.setItem('userData', JSON.stringify(this.userData));
-
-      // Verificar que se guardaron correctamente
-      const verificacion = sessionStorage.getItem('userData');
-    } catch (error) {}
-
+    // El modal ya maneja la redirección a MercadoPago
+    // Solo cerramos el modal si no hay pago
     this.showDataModal = false;
     this.cdr.markForCheck();
-
-    // ✅ NUEVO: Enviar datos al backend como en otros componentes
-    this.sendUserDataToBackend(userData);
-  }
-  private sendUserDataToBackend(userData: any): void {
-    this.http.post(`${this.backendUrl}api/recolecta`, userData).subscribe({
-      next: (response) => {
-        // ✅ LLAMAR A promptForPayment QUE INICIALIZA STRIPE
-        this.promptForPayment();
-      },
-      error: (error) => {
-        // ✅ AUN ASÍ ABRIR EL MODAL DE PAGO
-        this.promptForPayment();
-      },
-    });
   }
   onDataModalClosed(): void {
     this.showDataModal = false;
     this.cdr.markForCheck();
   }
+
+  // ========== MÉTODOS DE LA RULETA ==========
+
   showAnimalWheelAfterDelay(delayMs: number = 3000): void {
     if (this.wheelTimer) {
       clearTimeout(this.wheelTimer);
@@ -673,7 +807,6 @@ export class AnimalInteriorComponent
       ) {
         this.showFortuneWheel = true;
         this.cdr.markForCheck();
-      } else {
       }
     }, delayMs);
   }
@@ -681,7 +814,7 @@ export class AnimalInteriorComponent
   onPrizeWon(prize: Prize): void {
     const prizeMessage: ChatMessage = {
       sender: 'Chamana Olivia',
-      content: `🦉 ¡Los espíritus animales han hablado! Has ganado: **${prize.name}** ${prize.icon}\n\nLos antiguos guardianes del reino animal han decidido bendecirte con este regalo sagrado. La energía espiritual fluye a través de ti, conectándote más profundamente con tu animal interior. ¡Que la sabiduría ancestral te guíe!`,
+      content: `🦉 ¡Los espíritus animales han hablado! Has ganado: **${prize.name}** ${prize.icon}\n\nLos antiguos guardianes del reino animal han decidido bendecirte con este regalo sagrado.`,
       timestamp: new Date(),
       isUser: false,
     };
@@ -689,7 +822,6 @@ export class AnimalInteriorComponent
     this.chatMessages.push(prizeMessage);
     this.shouldScrollToBottom = true;
     this.saveMessagesToSession();
-
     this.processAnimalPrize(prize);
   }
 
@@ -707,8 +839,7 @@ export class AnimalInteriorComponent
       this.cdr.markForCheck();
     } else {
       alert(
-        'Du hast keine verfügbaren Drehungen. ' +
-          FortuneWheelComponent.getSpinStatus()
+        'No tienes giros disponibles. ' + FortuneWheelComponent.getSpinStatus()
       );
     }
   }
@@ -719,24 +850,22 @@ export class AnimalInteriorComponent
 
   private processAnimalPrize(prize: Prize): void {
     switch (prize.id) {
-      case '1': // 3 Conexiones Espirituales
+      case '1':
         this.addFreeAnimalConsultations(3);
         break;
-      case '2': // 1 Guía Premium - ACCESO COMPLETO
+      case '2':
         this.hasUserPaidForAnimal = true;
-        sessionStorage.setItem('hasUserPaidAnimalInterior', 'true');
+        sessionStorage.setItem('hasUserPaidForAnimal_inneresTier', 'true');
 
-        // Desbloquear cualquier mensaje bloqueado
         if (this.blockedMessageId) {
           this.blockedMessageId = null;
           sessionStorage.removeItem('animalInteriorBlockedMessageId');
         }
 
-        // Agregar mensaje especial para este premio
         const premiumMessage: ChatMessage = {
           sender: 'Chamana Olivia',
           content:
-            '🦋 **¡Has desbloqueado el acceso Premium completo!** 🦋\n\nLos espíritus animales te han sonreído de una manera extraordinaria. Ahora tienes acceso ilimitado a toda la sabiduría del reino animal. Puedes consultar sobre tu animal interior, conexiones espirituales y todos los misterios ancestrales tantas veces como desees.\n\n✨ *Los guardianes del reino animal han abierto todas sus puertas para ti* ✨',
+            '🦋 **¡Has desbloqueado el acceso Premium completo!** 🦋\n\nAhora tienes acceso ilimitado a toda la sabiduría del reino animal.',
           timestamp: new Date(),
           isUser: false,
         };
@@ -744,12 +873,12 @@ export class AnimalInteriorComponent
         this.shouldScrollToBottom = true;
         this.saveMessagesToSession();
         break;
-      // ✅ ELIMINADO: case '3' - 2 Consultas Extra
-      case '4': // Otra oportunidad
+      case '4':
         break;
       default:
     }
   }
+
   private addFreeAnimalConsultations(count: number): void {
     const current = parseInt(
       sessionStorage.getItem('freeAnimalConsultations') || '0'
@@ -781,7 +910,7 @@ export class AnimalInteriorComponent
 
       const prizeMsg: ChatMessage = {
         sender: 'Chamana Olivia',
-        content: `✨ *Has utilizado una conexión espiritual gratuita* ✨\n\nTe quedan **${remaining}** consultas con el reino animal disponibles.`,
+        content: `✨ *Has utilizado una conexión espiritual gratuita* ✨\n\nTe quedan **${remaining}** consultas gratuitas disponibles.`,
         timestamp: new Date(),
         isUser: false,
       };

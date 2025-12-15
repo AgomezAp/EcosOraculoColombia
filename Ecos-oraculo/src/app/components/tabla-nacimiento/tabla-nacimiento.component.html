@@ -12,13 +12,12 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-
       gtag("config", "G-HW2QWG5Z9M");
     </script>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Tabla de Nacimiento</title>
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -36,15 +35,16 @@
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
-    <noscript
-      ><iframe
+    <noscript>
+      <iframe
         src="https://www.googletagmanager.com/ns.html?id=GTM-WXHHTDK2"
         height="0"
         width="0"
         style="display: none; visibility: hidden"
-      ></iframe
-    ></noscript>
+      ></iframe>
+    </noscript>
     <!-- End Google Tag Manager (noscript) -->
+
     <!-- Fondo con estrellas animadas -->
     <video autoplay muted loop playsinline class="background-video">
       <source src="/CARTANATAL.mp4" type="video/mp4" />
@@ -111,7 +111,8 @@
             class="message"
             [ngClass]="{
               'user-message': message.isUser,
-              'astrologer-message': !message.isUser
+              'astrologer-message': !message.isUser,
+              'blocked-message': isMessageBlocked(message)
             }"
           >
             <div class="message-avatar" *ngIf="!message.isUser">
@@ -124,11 +125,33 @@
 
             <div class="message-content">
               <div class="message-text">
-                <div [innerHTML]="formatMessage(message.content)"></div>
-                <span
-                  class="message-time"
-                  *ngIf="!message.isUser || message.isUser"
+                <!-- CONTENIDO ORIGINAL (se difumina si está bloqueado) -->
+                <div [class.blurred-content]="isMessageBlocked(message)">
+                  <div [innerHTML]="formatMessage(message.content)"></div>
+                </div>
+
+                <!-- ✅ OVERLAY DE PAGO (solo aparece si está bloqueado) -->
+                <div
+                  *ngIf="isMessageBlocked(message)"
+                  class="message-payment-overlay"
                 >
+                  <div class="payment-prompt">
+                    <span class="lock-icon">🔒</span>
+                    <p><strong>Contenido Premium</strong></p>
+                    <p>
+                      Paga $18,000 COP para ver esta lectura astral y acceder a
+                      consultas ilimitadas
+                    </p>
+                    <button
+                      (click)="showDataModal = true"
+                      class="unlock-button"
+                    >
+                      💳 Desbloquear por $18,000 COP
+                    </button>
+                  </div>
+                </div>
+
+                <span class="message-time" *ngIf="!isMessageBlocked(message)">
                   {{ message.timestamp | date : "HH:mm" }}
                 </span>
               </div>
@@ -151,7 +174,8 @@
                   class="interpreter-avatar-small"
                   src="/Maestra-6.webp"
                   alt="Maestra Avatar"
-              /></span>
+                />
+              </span>
             </div>
             <div class="loading-content">
               <div class="loading-dots">
@@ -159,13 +183,13 @@
                 <span></span>
                 <span></span>
               </div>
-              <span class="loading-text"
-                >Maestra Astra está consultando las configuraciones
-                celestiales...</span
-              >
+              <span class="loading-text">
+                Maestra Emma está consultando las configuraciones celestiales...
+              </span>
             </div>
           </div>
         </div>
+
         <!-- Input Area -->
         <div class="chat-input-area">
           <div class="input-container">
@@ -173,7 +197,7 @@
               <textarea
                 class="message-input"
                 [(ngModel)]="currentMessage"
-                placeholder="Pregunta sobre tu tabla de nacimiento..."
+                placeholder="Pregunta sobre tu carta natal..."
                 (input)="autoResize($event)"
                 (keydown)="onKeyPress($event)"
                 [disabled]="isLoading"
@@ -203,69 +227,19 @@
           </div>
         </div>
       </div>
+
+      <!-- ✅ MODAL DE RECOLECCIÓN DE DATOS CON MERCADOPAGO -->
       <app-recolecta-datos
         *ngIf="showDataModal"
+        [serviceConfig]="birthChartServiceConfig"
+        [processPayment]="true"
         (onDataSubmitted)="onUserDataSubmitted($event)"
         (onModalClosed)="onDataModalClosed()"
       >
       </app-recolecta-datos>
     </div>
 
-    <!-- ===== MODAL DE PAGO ===== -->
-    <div *ngIf="showPaymentModal" class="payment-modal-overlay">
-      <div class="payment-modal">
-        <div class="payment-header">
-          <h3>🌟 Desbloquear Sabiduría Celestial</h3>
-          <button class="close-payment-button" (click)="cancelPayment()">
-            ✕
-          </button>
-        </div>
-
-        <div class="payment-content">
-          <div class="payment-info">
-            <p>Accede a lecturas ilimitadas con Maestra Emma</p>
-            <p>Descubre todos los secretos de tu carta natal</p>
-          </div>
-
-          <div class="payment-price">
-            <span class="price-amount">4.00€</span>
-            <p class="price-description">Acceso completo e ilimitado</p>
-          </div>
-
-          <div *ngIf="isProcessingPayment" class="payment-loading">
-            <div class="loading-spinner"></div>
-            <p>Preparando el pago...</p>
-          </div>
-
-          <div *ngIf="paymentError" class="payment-error">
-            {{ paymentError }}
-          </div>
-
-          <div
-            *ngIf="!isProcessingPayment"
-            id="payment-element-container-birth-chart"
-            class="payment-element-container"
-          ></div>
-
-          <div class="payment-actions">
-            <button
-              *ngIf="!isProcessingPayment"
-              class="pay-button"
-              (click)="handlePaymentSubmit()"
-              [disabled]="isProcessingPayment"
-            >
-              {{ isProcessingPayment ? "Procesando..." : "Pagar 4.00€" }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <app-fortune-wheel
-      [isVisible]="showFortuneWheel"
-      [prizes]="birthChartPrizes"
-      (onPrizeWon)="onPrizeWon($event)"
-      (onWheelClosed)="onWheelClosed()"
-    >
-    </app-fortune-wheel>
+    <!-- ✅ ELIMINADO: Modal de pago antiguo de PayPal/Stripe -->
+    <!-- ✅ ELIMINADO: Ruleta de la fortuna -->
   </body>
 </html>

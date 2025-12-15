@@ -53,8 +53,8 @@
         Tu navegador no soporta videos HTML5.
       </video>
 
-      <!-- Overlay opcional para mejorar legibilidad -->
       <div class="video-overlay"></div>
+
       <div class="content-with-navbar">
         <div class="oracle-main">
           <!-- Información del astrólogo -->
@@ -67,13 +67,11 @@
               />
             </div>
             <div class="interpreter-details">
-              <!-- Primera línea: nombre + icono + título juntos -->
               <div class="name-title-row">
                 <h3>{{ astrologerInfo.name }}</h3>
                 <span class="separator-icon">»</span>
                 <p class="interpreter-title">{{ astrologerInfo.title }}</p>
               </div>
-              <!-- Segunda línea: especialidad debajo EN MAYÚSCULAS -->
               <p class="interpreter-specialty">
                 Especialista en Astrología y Signos Zodiacales
               </p>
@@ -125,7 +123,6 @@
                       class="message-bubble interpreter-message"
                       [class.blocked-message]="isMessageBlocked(message)"
                     >
-                      <!-- CONTENIDO ORIGINAL (se difumina si está bloqueado) -->
                       <div
                         class="message-text"
                         [class.blurred-content]="isMessageBlocked(message)"
@@ -133,7 +130,7 @@
                         <p [innerHTML]="formatMessage(message.content)"></p>
                       </div>
 
-                      <!-- OVERLAY DE PAGO (solo aparece si está bloqueado) -->
+                      <!-- ✅ ACTUALIZADO: Overlay de pago -->
                       <div
                         *ngIf="isMessageBlocked(message)"
                         class="message-payment-overlay"
@@ -142,14 +139,15 @@
                           <span class="lock-icon">🔒</span>
                           <p><strong>Contenido Premium</strong></p>
                           <p>
-                            Paga 4.00€ para ver esta interpretación astral y
-                            acceder a consultas ilimitadas
+                            Paga $10,000 COP para ver esta interpretación astral
+                            y acceder a consultas ilimitadas
                           </p>
+                          <!-- ✅ CAMBIADO: Ahora abre el modal de datos -->
                           <button
-                            (click)="promptForPayment()"
+                            (click)="showDataModal = true"
                             class="unlock-button"
                           >
-                            💳 Desbloquear por 4.00€
+                            💳 Desbloquear por $10,000 COP
                           </button>
                         </div>
                       </div>
@@ -208,6 +206,7 @@
               </div>
             </div>
           </div>
+
           <!-- Área de entrada -->
           <div class="input-area">
             <div class="input-container">
@@ -249,72 +248,17 @@
         </div>
       </div>
 
-      <!-- MODAL DE PAGO -->
-      <div *ngIf="showPaymentModal" class="payment-modal-overlay">
-        <div class="payment-modal">
-          <div class="payment-header">
-            <h3>🌟 Desbloquea Consultas Astrales Ilimitadas</h3>
-            <button (click)="cancelPayment()" class="close-payment-button">
-              ✕
-            </button>
-          </div>
-
-          <div class="payment-content">
-            <div class="payment-info">
-              <p>Primera consulta gratis completada.</p>
-              <p>Para continuar consultando los astros ilimitadamente:</p>
-            </div>
-
-            <div class="payment-price">
-              <span class="price-amount">4.00€</span>
-              <span class="price-description"
-                >Acceso completo a interpretaciones astrales</span
-              >
-            </div>
-
-            <div *ngIf="isProcessingPayment" class="payment-loading">
-              <div class="loading-spinner"></div>
-              <p>Preparando sistema de pago...</p>
-            </div>
-
-            <div
-              id="payment-element-container"
-              class="payment-element-container"
-              [hidden]="isProcessingPayment"
-            >
-              <!-- Stripe Payment Element se monta aquí -->
-            </div>
-
-            <div *ngIf="paymentError" class="payment-error">
-              <span>{{ paymentError }}</span>
-            </div>
-
-            <div class="payment-actions">
-              <button
-                (click)="handlePaymentSubmit()"
-                [disabled]="isProcessingPayment"
-                class="pay-button"
-              >
-                <span *ngIf="!isProcessingPayment">💳 Pagar y Continuar</span>
-                <span *ngIf="isProcessingPayment">Procesando...</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
       <app-recolecta-datos
         *ngIf="showDataModal"
+        [serviceConfig]="zodiacoServiceConfig"
+        [processPayment]="true"
         (onDataSubmitted)="onUserDataSubmitted($event)"
         (onModalClosed)="onDataModalClosed()"
       >
       </app-recolecta-datos>
-      <app-fortune-wheel
-        [isVisible]="showFortuneWheel"
-        [prizes]="astralPrizes"
-        (onPrizeWon)="onPrizeWon($event)"
-        (onWheelClosed)="onWheelClosed()"
-      >
-      </app-fortune-wheel>
+
+      
+    
     </div>
   </body>
 </html>

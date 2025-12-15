@@ -1129,3 +1129,76 @@ body {
     margin-top: auto;
   }
 }
+
+/* ========== ESTILOS DE PAGO MERCADOPAGO ========== */
+.payment-btn {
+  background: linear-gradient(135deg, #00b894 0%, #00cec9 100%) !important;
+  border: 2px solid #00d9a8;
+  box-shadow: 0 10px 30px rgba(0, 184, 148, 0.3),
+              0 0 30px rgba(0, 206, 201, 0.2);
+}
+
+.payment-btn:hover {
+  background: linear-gradient(135deg, #00d9a8 0%, #00e5d5 100%) !important;
+  box-shadow: 0 15px 40px rgba(0, 184, 148, 0.4),
+              0 0 40px rgba(0, 206, 201, 0.3) !important;
+  transform: translateY(-5px) scale(1.05) !important;
+}
+
+.payment-btn:active {
+  transform: translateY(-2px) scale(1.02) !important;
+}
+
+.payment-bg {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  ) !important;
+}
+
+.payment-success {
+  animation: bounceIn 0.8s ease-out;
+}
+
+.success-message {
+  animation: pulse 2s infinite;
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* Responsive para botón de pago */
+@media (max-width: 768px) {
+  .payment-btn .button-text {
+    font-size: 12px;
+  }
+  
+  .payment-btn {
+    min-height: 45px;
+  }
+}

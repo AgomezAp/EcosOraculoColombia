@@ -12,13 +12,12 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-
       gtag("config", "G-HW2QWG5Z9M");
     </script>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Mapa Vocacional</title>
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -36,15 +35,16 @@
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
-    <noscript
-      ><iframe
+    <noscript>
+      <iframe
         src="https://www.googletagmanager.com/ns.html?id=GTM-WXHHTDK2"
         height="0"
         width="0"
         style="display: none; visibility: hidden"
-      ></iframe
-    ></noscript>
-    <!-- End Google Tag Manager (noscript) -->
+      ></iframe>
+    </noscript>
+    <!-- End Google Tag Manager (noscript) -->
+
     <!-- Video de fondo -->
     <video autoplay muted loop playsinline class="background-video">
       <source src="/MAPA-VOCACIONAL.mp4" type="video/mp4" />
@@ -53,6 +53,7 @@
 
     <!-- Overlay opcional para mejorar legibilidad -->
     <div class="video-overlay"></div>
+
     <div class="main-content">
       <div class="vocational-container">
         <!-- Header del consejero -->
@@ -145,14 +146,14 @@
                       <span class="lock-icon">🔒</span>
                       <p><strong>Contenido Premium</strong></p>
                       <p>
-                        Paga 4.00€ para ver esta orientación vocacional y
+                        Paga $18,000 COP para ver esta orientación vocacional y
                         acceder a consultas ilimitadas
                       </p>
                       <button
-                        (click)="promptForPayment()"
+                        (click)="showDataModal = true"
                         class="unlock-button"
                       >
-                        💳 Desbloquear por 4.00€
+                        💳 Desbloquear por $18,000 COP
                       </button>
                     </div>
                   </div>
@@ -180,6 +181,7 @@
                 </div>
               </div>
             </div>
+
             <!-- Área de entrada de mensajes -->
             <div class="chat-input-area">
               <div class="input-container">
@@ -218,80 +220,18 @@
               </div>
             </div>
           </div>
-
-          <!-- MODAL DE PAGO -->
-          <div *ngIf="showPaymentModal" class="payment-modal-overlay">
-            <div class="payment-modal">
-              <div class="payment-header">
-                <h3>🎯 Desbloquea Orientación Vocacional Ilimitada</h3>
-                <button (click)="cancelPayment()" class="close-payment-button">
-                  ✕
-                </button>
-              </div>
-
-              <div class="payment-content">
-                <div class="payment-info">
-                  <p>Primera consulta vocacional gratis completada.</p>
-                  <p>
-                    Para continuar explorando tu camino profesional
-                    ilimitadamente:
-                  </p>
-                </div>
-
-                <div class="payment-price">
-                  <span class="price-amount">4.00€</span>
-                  <span class="price-description"
-                    >Acceso completo a orientación vocacional</span
-                  >
-                </div>
-
-                <div *ngIf="isProcessingPayment" class="payment-loading">
-                  <div class="loading-spinner"></div>
-                  <p>Preparando sistema de pago...</p>
-                </div>
-
-                <div
-                  id="payment-element-container"
-                  class="payment-element-container"
-                  [hidden]="isProcessingPayment"
-                >
-                  <!-- Stripe Payment Element se monta aquí -->
-                </div>
-
-                <div *ngIf="paymentError" class="payment-error">
-                  <span>{{ paymentError }}</span>
-                </div>
-
-                <div class="payment-actions">
-                  <button
-                    (click)="handlePaymentSubmit()"
-                    [disabled]="isProcessingPayment"
-                    class="pay-button"
-                  >
-                    <span *ngIf="!isProcessingPayment"
-                      >💳 Pagar y Continuar</span
-                    >
-                    <span *ngIf="isProcessingPayment">Procesando...</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
+
+      <!-- ✅ MODAL DE RECOLECCIÓN DE DATOS CON MERCADOPAGO -->
       <app-recolecta-datos
         *ngIf="showDataModal"
+        [serviceConfig]="vocationalServiceConfig"
+        [processPayment]="true"
         (onDataSubmitted)="onUserDataSubmitted($event)"
         (onModalClosed)="onDataModalClosed()"
       >
       </app-recolecta-datos>
-      <app-fortune-wheel
-        [isVisible]="showFortuneWheel"
-        [prizes]="vocationalPrizes"
-        (onPrizeWon)="onPrizeWon($event)"
-        (onWheelClosed)="onWheelClosed()"
-      >
-      </app-fortune-wheel>
     </div>
   </body>
 </html>

@@ -242,7 +242,11 @@
       <div class="payment-modal">
         <div class="payment-header">
           <h3>🦉 Desbloquear Sabiduría Animal</h3>
-          <button class="close-payment-button" (click)="cancelPayment()">
+          <button
+            class="close-payment-button"
+            (click)="cancelPayment()"
+            [disabled]="isProcessingPayment"
+          >
             ✕
           </button>
         </div>
@@ -253,46 +257,69 @@
             <p>Descubre los secretos profundos de tu animal interior</p>
           </div>
 
+          <div class="payment-features">
+            <div class="feature-item">
+              <span class="feature-icon">✨</span>
+              <span>Consultas ilimitadas</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-icon">🦋</span>
+              <span>Conexión espiritual profunda</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-icon">🔮</span>
+              <span>Guía personalizada</span>
+            </div>
+          </div>
+
           <div class="payment-price">
-            <span class="price-amount">4.00€</span>
+            <span class="price-amount">$15,000 COP</span>
             <p class="price-description">Acceso completo e ilimitado</p>
           </div>
 
+          <!-- Loading de procesamiento -->
           <div *ngIf="isProcessingPayment" class="payment-loading">
-            <div class="loading-spinner"></div>
-            <p>Preparando el pago...</p>
+            <div class="loading-spinner mercadopago-spinner"></div>
+            <p>Conectando con MercadoPago...</p>
+            <span class="loading-subtitle">No cierres esta ventana</span>
           </div>
 
+          <!-- Error de pago -->
           <div *ngIf="paymentError" class="payment-error">
-            {{ paymentError }}
+            ⚠️ {{ paymentError }}
           </div>
 
-          <div
-            *ngIf="!isProcessingPayment"
-            id="payment-element-container-animal"
-            class="payment-element-container"
-          ></div>
-
-          <div class="payment-actions">
+          <!-- Botones de acción -->
+          <div class="payment-actions" *ngIf="!isProcessingPayment">
+            <button class="cancel-button" (click)="cancelPayment()">
+              Cancelar
+            </button>
             <button
-              *ngIf="!isProcessingPayment"
-              class="pay-button"
+              class="pay-button mercadopago-button"
               (click)="handlePaymentSubmit()"
               [disabled]="isProcessingPayment"
             >
-              {{ isProcessingPayment ? "Procesando..." : "Pagar 4.00€" }}
+              <span class="btn-icon">💳</span>
+              <span>Pagar con MercadoPago</span>
             </button>
+          </div>
+
+          <!-- Badge de seguridad -->
+          <div class="security-badge">
+            <span class="lock-icon">🔒</span>
+            <span>Pago 100% seguro con MercadoPago</span>
           </div>
         </div>
       </div>
     </div>
-    <app-fortune-wheel
-      [isVisible]="showFortuneWheel"
-      [prizes]="animalPrizes"
-      (onPrizeWon)="onPrizeWon($event)"
-      (onWheelClosed)="onWheelClosed()"
+    <app-recolecta-datos
+      *ngIf="showDataModal"
+      [serviceConfig]="animalServiceConfig"
+      [processPayment]="true"
+      (onDataSubmitted)="onUserDataSubmitted($event)"
+      (onModalClosed)="onDataModalClosed()"
     >
-    </app-fortune-wheel>
+    </app-recolecta-datos>
   </body>
 </html>
 

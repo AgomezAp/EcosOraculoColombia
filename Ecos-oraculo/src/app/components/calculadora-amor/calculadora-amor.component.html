@@ -12,13 +12,12 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-
       gtag("config", "G-HW2QWG5Z9M");
     </script>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Calculadora del Amor</title>
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -36,15 +35,16 @@
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
-    <noscript
-      ><iframe
+    <noscript>
+      <iframe
         src="https://www.googletagmanager.com/ns.html?id=GTM-WXHHTDK2"
         height="0"
         width="0"
         style="display: none; visibility: hidden"
-      ></iframe
-    ></noscript>
+      ></iframe>
+    </noscript>
     <!-- End Google Tag Manager (noscript) -->
+
     <video autoplay muted loop playsinline class="background-video">
       <source src="/CALCULADORA.mp4" type="video/mp4" />
       Tu navegador no soporta videos HTML5.
@@ -52,6 +52,7 @@
 
     <!-- Overlay opcional para mejorar legibilidad -->
     <div class="video-overlay"></div>
+
     <!-- Contenido principal -->
     <div class="main-content">
       <div class="love-calculator-modal">
@@ -98,7 +99,6 @@
 
         <!-- Chat Messages -->
         <div class="chat-messages" #scrollContainer (scroll)="onScroll($event)">
-          <!-- Modifica la estructura del mensaje para mover la hora dentro del message-text -->
           <div
             *ngFor="let message of conversationHistory; trackBy: trackByMessage"
             class="message"
@@ -122,7 +122,6 @@
             >
               <div class="message-text">
                 <div [innerHTML]="formatMessage(message.message)"></div>
-                <!-- MOVER LA HORA DENTRO DEL message-text -->
                 <span
                   class="message-time"
                   *ngIf="
@@ -133,7 +132,7 @@
                 </span>
               </div>
 
-              <!-- Overlay para mensajes bloqueados -->
+              <!-- ✅ ACTUALIZADO: Overlay para mensajes bloqueados (sin método antiguo) -->
               <div *ngIf="isMessageBlocked(message)" class="blocked-overlay">
                 <div class="blocked-message">
                   <mat-icon>lock</mat-icon>
@@ -141,11 +140,9 @@
                   <small
                     >Realiza el pago para ver esta respuesta completa</small
                   >
-                  <button
-                    class="unlock-button"
-                    (click)="openDataModalForPayment()"
-                  >
-                    Desbloquear por 4.00€
+                  <!-- ✅ CAMBIADO: Ahora abre el modal de datos directamente -->
+                  <button class="unlock-button" (click)="showDataModal = true">
+                    Desbloquear por $12,000 COP
                   </button>
                 </div>
               </div>
@@ -162,7 +159,6 @@
           </div>
 
           <!-- Loading indicator -->
-
           <div *ngIf="isLoading" class="loading-message">
             <div class="loading-avatar">
               <span class="avatar-icon">
@@ -180,7 +176,6 @@
                   <span></span>
                   <span></span>
                 </div>
-                <!-- MOVER EL TEXTO DENTRO DE loading-dots -->
                 <span class="loading-text">
                   Maestra Valentina está consultando los números del amor...
                 </span>
@@ -217,9 +212,9 @@
             ></textarea>
             <div
               class="character-count"
-              *ngIf="(currentMessage?.length || 0) > 800"
+              *ngIf="(currentMessage.length || 0) > 800"
             >
-              {{ currentMessage || 0 }}/1000
+              {{ currentMessage.length || 0 }}/1000
             </div>
           </div>
 
@@ -249,87 +244,22 @@
           </div>
         </div>
       </div>
+
+      <!-- ✅ ACTUALIZADO: Modal de recolección de datos con MercadoPago -->
       <app-recolecta-datos
         *ngIf="showDataModal"
+        [serviceConfig]="loveServiceConfig"
+        [processPayment]="true"
         (onDataSubmitted)="onUserDataSubmitted($event)"
         (onModalClosed)="onDataModalClosed()"
       >
       </app-recolecta-datos>
     </div>
 
-    <!-- Modal de Pago -->
-    <div
-      *ngIf="showPaymentModal"
-      class="payment-modal-overlay"
-      (click)="cancelPayment()"
-    >
-      <div class="payment-modal" (click)="$event.stopPropagation()">
-        <div class="payment-header">
-          <h3>💕 Acceso Completo a Lecturas de Amor</h3>
-          <button
-            mat-icon-button
-            (click)="cancelPayment()"
-            class="close-payment-btn"
-          >
-            <mat-icon>close</mat-icon>
-          </button>
-        </div>
+    <!-- ✅ ELIMINADO: Modal de pago antiguo de PayPal/Stripe -->
+    <!-- Ya no se necesita porque el pago se maneja en app-recolecta-datos -->
 
-        <div class="payment-content">
-          <div class="payment-info">
-            <div class="pricing">
-              <div class="price">
-                <span class="currency">€</span>
-                <span class="amount">4.00</span>
-                <span class="period">una sola vez</span>
-              </div>
-              <p class="price-note">Pago único para acceso ilimitado</p>
-            </div>
-          </div>
-
-          <!-- Contenedor del elemento de pago de Stripe -->
-          <div class="payment-form-container">
-            <div *ngIf="isProcessingPayment" class="payment-loading">
-              <mat-spinner diameter="40"></mat-spinner>
-              <p>Preparando formulario de pago...</p>
-            </div>
-
-            <div
-              id="payment-element-container-love"
-              class="stripe-payment-element"
-            ></div>
-
-            <div *ngIf="paymentError" class="payment-error">
-              <mat-icon color="warn">error</mat-icon>
-              <span>{{ paymentError }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="payment-actions">
-          <button
-            mat-raised-button
-            color="primary"
-            (click)="handlePaymentSubmit()"
-            [disabled]="isProcessingPayment"
-          >
-            <mat-spinner
-              *ngIf="isProcessingPayment"
-              diameter="20"
-            ></mat-spinner>
-            <mat-icon *ngIf="!isProcessingPayment">payment</mat-icon>
-            {{ isProcessingPayment ? "Procesando..." : "Realizar Pago" }}
-          </button>
-          <button
-            mat-stroked-button
-            (click)="cancelPayment()"
-            [disabled]="isProcessingPayment"
-          >
-            Cancelar
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- ✅ Ruleta de la fortuna (si la usas) -->
     <app-fortune-wheel
       *ngIf="showFortuneWheel"
       [isVisible]="showFortuneWheel"

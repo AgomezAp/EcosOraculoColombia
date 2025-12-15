@@ -21,6 +21,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { TextPlugin } from 'gsap/TextPlugin';
 import { ParticlesComponent } from '../../../shared/particles/particles.component';
 import { CardService } from '../../../services/tarot/card.service';
+import { MercadopagoService } from '../../../services/mercadopago.service';
 
 gsap.registerPlugin(ScrollTrigger, TextPlugin);
 @Component({
@@ -52,7 +53,8 @@ export class DescriptionComponent implements OnInit, AfterViewInit, OnDestroy {
     private router: Router,
     private route: ActivatedRoute,
     private http: HttpClient,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private mercadopagoService: MercadopagoService
   ) {}
   volverAlInicio() {
     // Si usas Angular Router:
@@ -60,22 +62,109 @@ export class DescriptionComponent implements OnInit, AfterViewInit, OnDestroy {
   }
   ngOnInit(): void {
     this.isLoading = true;
-    this.selectedCards = this.cardService.getSelectedCards();
 
-    if (this.selectedCards.length === 0) {
-      this.router.navigate(['/']);
+    // Verificar si viene de un pago exitoso de MercadoPago
+    const paymentStatus = this.mercadopagoService.checkPaymentStatusFromUrl();
+    console.log('🔍 Estado de pago detectado:', paymentStatus);
+
+    if (paymentStatus && paymentStatus.status === 'approved') {
+      console.log('✅ Pago exitoso de MercadoPago detectado');
+      this.isPaid = true;
+
+      // Recuperar datos guardados antes del pago
+      const savedData = this.mercadopagoService.getPaymentData();
+      console.log('📦 Datos recuperados:', savedData);
+
+      if (savedData) {
+        // Recuperar cartas
+        if (savedData.selectedCards && savedData.selectedCards.length > 0) {
+          this.selectedCards = savedData.selectedCards;
+          // También guardar en el servicio para consistencia
+          this.cardService.setSelectedCards(this.selectedCards);
+          console.log('🃏 Cartas recuperadas:', this.selectedCards);
+        }
+
+        // Recuperar datos de usuario
+        if (savedData.userData) {
+          sessionStorage.setItem(
+            'userData',
+            JSON.stringify(savedData.userData)
+          );
+          console.log('👤 Usuario recuperado:', savedData.userData);
+        }
+      }
+
+      // Limpiar datos de pago
+      this.mercadopagoService.clearPaymentData();
+
+      // Limpiar parámetros de la URL (opcional)
+      this.cleanUrlParams();
+    } else if (
+      paymentStatus &&
+      (paymentStatus.status === 'rejected' ||
+        paymentStatus.status === 'failure')
+    ) {
+      console.log('❌ Pago fallido, redirigiendo...');
+      this.router.navigate(['/welcome'], {
+        queryParams: { error: 'payment_failed' },
+      });
+      return;
+    } else if (paymentStatus && paymentStatus.status === 'pending') {
+      console.log('⏳ Pago pendiente');
+      // Puedes mostrar un mensaje o manejar como prefieras
+      this.isPaid = false;
+    } else {
+      // No viene de MercadoPago, cargar cartas normalmente del servicio
+      this.selectedCards = this.cardService.getSelectedCards();
+      console.log('🃏 Cartas cargadas del servicio:', this.selectedCards);
+    }
+
+    // Validar que hay cartas
+    if (!this.selectedCards || this.selectedCards.length === 0) {
+      console.log('⚠️ No hay cartas seleccionadas, redirigiendo...');
+      this.router.navigate(['/welcome']);
       return;
     }
 
     this.generateDescriptionText();
-
-    // Forzar detección de cambios
     this.cdr.detectChanges();
 
     setTimeout(() => {
       this.isLoading = false;
-      this.cdr.detectChanges(); // Forzar actualización
+      this.cdr.detectChanges();
     }, 1000);
+  }
+
+  // Método auxiliar para limpiar parámetros de URL
+  private cleanUrlParams(): void {
+    const url = new URL(window.location.href);
+    const paramsToRemove = [
+      'status',
+      'collection_status',
+      'payment_id',
+      'collection_id',
+      'external_reference',
+      'payment_type',
+      'merchant_order_id',
+      'preference_id',
+      'site_id',
+      'processing_mode',
+      'merchant_account_id',
+      'service',
+    ];
+
+    let hasParams = false;
+    paramsToRemove.forEach((param) => {
+      if (url.searchParams.has(param)) {
+        url.searchParams.delete(param);
+        hasParams = true;
+      }
+    });
+
+    if (hasParams) {
+      window.history.replaceState({}, document.title, url.pathname);
+      console.log('🧹 Parámetros de pago limpiados de la URL');
+    }
   }
 
   private generateDescriptionText(): void {
@@ -670,6 +759,71 @@ export class DescriptionComponent implements OnInit, AfterViewInit, OnDestroy {
       },
       '-=0.2'
     );
+  }
+
+  /**
+   * Realiza el pago con MercadoPago
+   */
+  async makePayment(): Promise<void> {
+    try {
+      console.log('💳 Iniciando proceso de pago con MercadoPago...');
+
+      // Recuperar datos del usuario desde sessionStorage
+      const savedUserData = sessionStorage.getItem('userData');
+      let userData: any = null;
+
+      if (savedUserData) {
+        try {
+          userData = JSON.parse(savedUserData);
+        } catch (error) {
+          console.warn('⚠️ No se pudo parsear userData:', error);
+        }
+      }
+
+      // Extraer email y nombres (si están disponibles)
+      const email = userData?.email || 'usuario@ecosoraculo.com';
+
+      // Intentar extraer nombre del email (antes del @)
+      const emailPrefix = email.split('@')[0];
+      const nameParts = emailPrefix.split(/[._-]/);
+      const firstName = nameParts[0] || 'Usuario';
+      const lastName =
+        nameParts.length > 1 ? nameParts[nameParts.length - 1] : 'Ecos';
+
+      // Guardar las cartas seleccionadas antes de redirigir
+      const paymentData = {
+        selectedCards: this.selectedCards,
+        descriptionsText: this.descriptionsText,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.mercadopagoService.savePaymentData(paymentData);
+
+      // Crear la orden de pago con información mejorada
+      const order = await this.mercadopagoService.createOrder({
+        amount: 15000,
+        serviceName: 'Lectura de cartas tarot',
+        serviceId: '1',
+        firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1),
+        lastName: lastName.charAt(0).toUpperCase() + lastName.slice(1),
+        email: email,
+        categoryId: 'services',
+        description:
+          'Lectura personalizada de cartas del tarot con interpretación detallada basada en tu consulta',
+      });
+
+      console.log(
+        '✅ Orden creada con datos mejorados, redirigiendo a MercadoPago...'
+      );
+
+      // Redirigir al usuario a la página de pago (usando sandbox para pruebas)
+      this.mercadopagoService.redirectToPayment(
+        order.sandbox_init_point || order.init_point
+      );
+    } catch (error) {
+      console.error('❌ Error al crear orden de pago:', error);
+      alert('Error al procesar el pago. Por favor, intenta nuevamente.');
+    }
   }
 
   // Limpieza al destruir el componente

@@ -12,13 +12,12 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-
       gtag("config", "G-HW2QWG5Z9M");
     </script>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Horóscopo - Zodiaco</title>
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -36,15 +35,16 @@
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
-    <noscript
-      ><iframe
+    <noscript>
+      <iframe
         src="https://www.googletagmanager.com/ns.html?id=GTM-WXHHTDK2"
         height="0"
         width="0"
         style="display: none; visibility: hidden"
-      ></iframe
-    ></noscript>
+      ></iframe>
+    </noscript>
     <!-- End Google Tag Manager (noscript) -->
+
     <!-- Fondo con estrellas animadas -->
     <video autoplay muted loop playsinline class="background-video">
       <source src="/HOROSCOPO.mp4" type="video/mp4" />
@@ -103,7 +103,8 @@
             class="message-wrapper"
             [ngClass]="{
               'user-message': message.role === 'user',
-              'master-message': message.role === 'master'
+              'master-message': message.role === 'master',
+              'blocked-message': isMessageBlocked(message)
             }"
           >
             <div
@@ -115,7 +116,6 @@
             >
               <div class="message-avatar" *ngIf="message.role === 'master'">
                 <img
-                  *ngIf="message.role === 'master'"
                   class="interpreter-avatar-small"
                   src="/Maestra-8.webp"
                   alt="Maestra Avatar"
@@ -123,22 +123,47 @@
               </div>
 
               <div class="message-content">
-                <!-- Eliminar el message-header de aquí -->
+                <!-- CONTENIDO ORIGINAL (se difumina si está bloqueado) -->
+                <div [class.blurred-content]="isMessageBlocked(message)">
+                  <div
+                    class="message-text"
+                    [innerHTML]="formatMessage(message.message)"
+                  ></div>
+                </div>
 
+                <!-- ✅ OVERLAY DE PAGO (solo aparece si está bloqueado) -->
                 <div
-                  class="message-text"
-                  [innerHTML]="formatMessage(message.message)"
-                ></div>
+                  *ngIf="isMessageBlocked(message)"
+                  class="message-payment-overlay"
+                >
+                  <div class="payment-prompt">
+                    <span class="lock-icon">🔒</span>
+                    <p><strong>Contenido Premium</strong></p>
+                    <p>
+                      Paga $18,000 COP para ver esta lectura astrológica y
+                      acceder a consultas ilimitadas
+                    </p>
+                    <button
+                      (click)="showDataModal = true"
+                      class="unlock-button"
+                    >
+                      💳 Desbloquear por $18,000 COP
+                    </button>
+                  </div>
+                </div>
 
-                <!-- Mover la hora dentro del message-content, después del message-text -->
-                <span class="message-time" *ngIf="message.role === 'master'">
+                <span
+                  class="message-time"
+                  *ngIf="
+                    message.role === 'master' && !isMessageBlocked(message)
+                  "
+                >
                   {{ formatTime(message.timestamp) }}
                 </span>
               </div>
 
               <div class="message-avatar" *ngIf="message.role === 'user'">
                 <img
-                  *ngIf="message.role === 'user'"
                   class="user-avatar-image"
                   src="/Visitante.webp"
                   alt="Usuario Avatar"
@@ -147,7 +172,7 @@
             </div>
           </div>
 
-          <!-- 👈 INDICADOR DE CARGA AGREGADO AQUÍ -->
+          <!-- Indicador de carga -->
           <div *ngIf="isLoading" class="message-container typing-indicator">
             <div class="interpreter-message-wrapper">
               <div class="message-avatar">
@@ -165,7 +190,7 @@
                     <span></span>
                   </div>
                   <p class="typing-text">
-                    Astrologa Emma está consultando los astros para ti...
+                    Astróloga María está consultando los astros para ti...
                   </p>
                 </div>
               </div>
@@ -217,101 +242,16 @@
         </div>
       </div>
     </div>
+
+    <!-- ✅ MODAL DE RECOLECCIÓN DE DATOS CON MERCADOPAGO -->
     <app-recolecta-datos
       *ngIf="showDataModal"
+      [serviceConfig]="horoscopeServiceConfig"
+      [processPayment]="true"
       (onDataSubmitted)="onUserDataSubmitted($event)"
       (onModalClosed)="onDataModalClosed()"
     >
     </app-recolecta-datos>
-    <!-- ===== MODAL DE PAGO HORÓSCOPO ===== -->
-    <div
-      *ngIf="showPaymentModal"
-      class="payment-modal-overlay"
-      (click)="$event.stopPropagation()"
-    >
-      <div class="payment-modal" (click)="$event.stopPropagation()">
-        <div class="payment-header">
-          <h3>🔮 Desbloquear Sabiduría Astrológica</h3>
-          <button
-            class="close-payment-button"
-            (click)="cancelHoroscopePayment()"
-          >
-            ✕
-          </button>
-        </div>
 
-        <div class="payment-content">
-          <div class="payment-price">
-            <div class="price-container">
-              <span class="currency">$</span>
-              <span class="price-amount">4</span>
-              <span class="price-decimal">.00</span>
-            </div>
-            <p class="price-description">Acceso completo e ilimitado</p>
-            <div class="price-features">
-              <span class="feature-tag">Sin suscripciones</span>
-              <span class="feature-tag">Pago único</span>
-              <span class="feature-tag">Acceso inmediato</span>
-            </div>
-          </div>
-
-          <div *ngIf="isProcessingPayment" class="payment-loading">
-            <div class="loading-spinner"></div>
-            <p>Preparando el pago seguro...</p>
-          </div>
-
-          <div *ngIf="paymentError" class="payment-error">
-            <mat-icon>error_outline</mat-icon>
-            <span>{{ paymentError }}</span>
-          </div>
-
-          <div
-            *ngIf="!isProcessingPayment"
-            id="payment-element-container-horoscope"
-            class="payment-element-container"
-          ></div>
-
-          <div class="payment-actions">
-            <button
-              *ngIf="!isProcessingPayment"
-              class="pay-button"
-              (click)="handleHoroscopePaymentSubmit()"
-              [disabled]="isProcessingPayment"
-            >
-              <mat-icon *ngIf="!isProcessingPayment">lock_open</mat-icon>
-              <mat-spinner
-                *ngIf="isProcessingPayment"
-                diameter="20"
-                color="accent"
-              ></mat-spinner>
-              {{ isProcessingPayment ? "Procesando pago..." : "Pagar 4.00€" }}
-            </button>
-
-            <button
-              class="cancel-button"
-              (click)="cancelHoroscopePayment()"
-              [disabled]="isProcessingPayment"
-            >
-              <mat-icon>close</mat-icon>
-              Cancelar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <app-fortune-wheel
-      [isVisible]="showFortuneWheel"
-      [prizes]="horoscopePrizes"
-      (onPrizeWon)="onPrizeWon($event)"
-      (onWheelClosed)="onWheelClosed()"
-    >
-    </app-fortune-wheel>
-
-    <!-- Backdrop para cerrar modal al hacer clic fuera -->
-    <div
-      *ngIf="showPaymentModal"
-      class="modal-backdrop"
-      (click)="cancelHoroscopePayment()"
-    ></div>
   </body>
 </html>

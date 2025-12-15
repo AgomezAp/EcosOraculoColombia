@@ -46,24 +46,29 @@
     <div class="data-modal-overlay">
       <div class="data-modal">
         <div class="data-header">
-          <h3>📝 Completa tus datos para continuar</h3>
-          <button (click)="cancelDataModal()" class="close-data-button">
+          <h3>🔮 Completa tu compra</h3>
+          <button
+            (click)="cancelDataModal()"
+            class="close-data-button"
+            [disabled]="isProcessingPayment"
+          >
             ✕
           </button>
         </div>
 
         <div class="data-content">
           <div class="data-info">
-            <p>Para proceder con el pago, necesitamos algunos datos:</p>
+            <p>Ingresa tus datos para continuar con el pago</p>
           </div>
 
           <form class="data-form" (ngSubmit)="submitUserData()">
             <!-- Datos de contacto -->
             <div class="form-section">
-              <h4>Datos de Contacto</h4>
+              <h4>📧 Datos de Contacto</h4>
+
               <div class="form-row">
                 <div class="form-group">
-                  <label for="email">Email *:</label>
+                  <label for="email">Email *</label>
                   <input
                     type="email"
                     id="email"
@@ -72,91 +77,152 @@
                     placeholder="tu@email.com"
                     required
                     [class.error]="hasError('email')"
+                    [disabled]="isProcessingPayment"
                   />
-                  <span *ngIf="hasError('email')" class="error-message">{{
-                    dataFormErrors["email"]
-                  }}</span>
+                  <span *ngIf="hasError('email')" class="error-message">
+                    {{ dataFormErrors["email"] }}
+                  </span>
                 </div>
-
               </div>
 
-              <!-- ✅ Checkbox para factura -->
-              <div class="form-group checkbox-group">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="firstName">Nombre (opcional)</label>
+                  <input
+                    type="text"
+                    id="firstName"
+                    [(ngModel)]="userData.firstName"
+                    name="firstName"
+                    placeholder="Tu nombre"
+                    [disabled]="isProcessingPayment"
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="lastName">Apellido (opcional)</label>
+                  <input
+                    type="text"
+                    id="lastName"
+                    [(ngModel)]="userData.lastName"
+                    name="lastName"
+                    placeholder="Tu apellido"
+                    [disabled]="isProcessingPayment"
+                  />
+                </div>
+              </div>
+
+              <div class="form-group checkbox-group info-notice">
+                <span class="info-icon">📧</span>
                 <span class="checkbox-text">
-                  📧 Te llegará una factura al correo electrónico
+                  Recibirás una factura en tu correo electrónico
                 </span>
               </div>
             </div>
+
+            <!-- ✅ Resumen del Servicio DINÁMICO -->
+            <div class="service-summary">
+              <div class="summary-header">
+                <span class="summary-icon">✨</span>
+                <h4>Resumen de tu compra</h4>
+              </div>
+              <div class="summary-details">
+                <div class="summary-item">
+                  <span>Servicio:</span>
+                  <span>{{ serviceConfig.serviceName }}</span>
+                </div>
+                <div class="summary-item">
+                  <span>Descripción:</span>
+                  <span>{{ serviceConfig.description }}</span>
+                </div>
+                <div class="summary-divider"></div>
+                <div class="summary-item total">
+                  <span>Total:</span>
+                  <span class="price">{{ formattedPrice }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Error general -->
             <div
               *ngIf="dataFormErrors['general']"
               class="error-message general-error"
             >
-              {{ dataFormErrors["general"] }}
+              ⚠️ {{ dataFormErrors["general"] }}
             </div>
 
-            <div *ngIf="isValidatingData" class="data-loading">
-              <div class="loading-spinner"></div>
-              <p>Validando datos...</p>
+            <!-- Loading -->
+            <div
+              *ngIf="isProcessingPayment"
+              class="data-loading payment-loading"
+            >
+              <div class="loading-spinner payment-spinner"></div>
+              <p>Conectando con MercadoPago...</p>
+              <span class="loading-subtitle">No cierres esta ventana</span>
             </div>
-            <div class="form-group" style="margin: 16px 0">
-              <label>
+
+            <!-- Términos -->
+            <div class="form-group terms-section" *ngIf="!isProcessingPayment">
+              <label class="checkbox-label">
                 <input
                   type="checkbox"
                   [(ngModel)]="aceptaTerminos"
                   name="aceptaTerminos"
                   required
                 />
-                Acepto los
-                <a
-                  routerLink="/terminos-condiciones"
-                  target="_blank"
-                  href="terminos-condiciones-ecos"
-                  (click)="$event.stopPropagation()"
-                >
-                  Términos y Condiciones
-                </a>
-                *
+                <span>
+                  Acepto los
+                  <a href="/terminos-condiciones-ecos" target="_blank">
+                    Términos y Condiciones
+                  </a>
+                  *
+                </span>
               </label>
 
-              <label>
+              <label class="checkbox-label">
                 <input
                   type="checkbox"
                   [(ngModel)]="datosVeridicos"
                   name="datosVeridicos"
                   required
                 />
-                Confirmo que los datos proporcionados son verídicos y completos
+                <span
+                  >Confirmo que los datos proporcionados son verídicos *</span
+                >
               </label>
 
-              <!-- ✅ Mensajes de error corregidos -->
-              <span *ngIf="showDatosVeridicosError" class="error-message">
-                Debes confirmar que los datos introducidos son verídicos
-              </span>
               <span *ngIf="showTerminosError" class="error-message">
                 Debes aceptar los Términos y Condiciones
               </span>
+              <span *ngIf="showDatosVeridicosError" class="error-message">
+                Debes confirmar que los datos son verídicos
+              </span>
             </div>
 
-            <div class="data-actions">
+            <!-- Botones -->
+            <div class="data-actions" *ngIf="!isProcessingPayment">
               <button
                 type="button"
                 (click)="cancelDataModal()"
                 class="cancel-button"
-                [disabled]="isValidatingData"
               >
                 Cancelar
               </button>
-              <!-- ✅ Botón corregido - solo type="submit", sin (click) -->
+
               <button
                 type="submit"
                 [disabled]="
                   isValidatingData || !aceptaTerminos || !datosVeridicos
                 "
-                class="continue-button"
+                class="payment-button"
               >
-                <span *ngIf="!isValidatingData">Continuar al Pago</span>
-                <span *ngIf="isValidatingData">Procesando...</span>
+                <span class="btn-icon">💳</span>
+                <span>Pagar {{ formattedPrice }}</span>
               </button>
+            </div>
+
+            <div class="security-badge">
+              <span class="lock-icon">🔒</span>
+              <span>Pago 100% seguro con MercadoPago</span>
             </div>
           </form>
         </div>

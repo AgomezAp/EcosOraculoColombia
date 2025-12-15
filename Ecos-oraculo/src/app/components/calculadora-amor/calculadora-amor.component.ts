@@ -23,6 +23,7 @@ import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import {
   CalculadoraAmorService,
   CompatibilityData,
@@ -30,12 +31,13 @@ import {
   LoveCalculatorResponse,
   LoveExpertInfo,
 } from '../../services/calculadora-amor.service';
+import { MercadopagoService } from '../../services/mercadopago.service';
 import { Subject, takeUntil } from 'rxjs';
-import { PaypalService } from '../../services/paypal.service';
-
 import { HttpClient } from '@angular/common/http';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { RecolectaDatosComponent } from '../recolecta-datos/recolecta-datos.component';
+import {
+  RecolectaDatosComponent,
+  ServiceConfig,
+} from '../recolecta-datos/recolecta-datos.component';
 import { environment } from '../../environments/environmets.prod';
 import {
   FortuneWheelComponent,
@@ -67,9 +69,6 @@ export class CalculadoraAmorComponent
 {
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
-  textareaHeight: number = 45; // Altura inicial
-  private readonly minTextareaHeight = 45;
-  private readonly maxTextareaHeight = 120;
   // Variables principales del chat
   conversationHistory: ConversationMessage[] = [];
   currentMessage: string = '';
@@ -79,24 +78,35 @@ export class CalculadoraAmorComponent
   hasStartedConversation: boolean = false;
   showDataForm: boolean = false;
 
+  // Modal de datos
   showDataModal: boolean = false;
   userData: any = null;
 
+  // ✅ Configuración del servicio para MercadoPago
+  loveServiceConfig: ServiceConfig = {
+    serviceId: '9', // ID del servicio calculadora-amor en el backend
+    serviceName: 'Calculadora del Amor',
+    amount: 12000, // $12,000 COP
+    description:
+      'Acceso completo a consultas ilimitadas de compatibilidad amorosa',
+  };
+
+  // Control de scroll
   private shouldAutoScroll = true;
   private lastMessageCount = 0;
 
-  // Variables para control de pagos
+  // ✅ Variables para control de pagos (MercadoPago)
   showPaymentModal: boolean = false;
-
-  clientSecret: string | null = null;
   isProcessingPayment: boolean = false;
   paymentError: string | null = null;
   hasUserPaidForLove: boolean = false;
-  firstQuestionAsked: boolean = false;
-
-  // NUEVA PROPIEDAD para controlar mensajes bloqueados
   blockedMessageId: string | null = null;
-  //propiedades para la ruleta
+
+  // ✅ Contador de mensajes del usuario para lógica del 3er mensaje
+  userMessageCount: number = 0;
+  private readonly MESSAGES_BEFORE_PAYMENT: number = 3;
+
+  // Propiedades para la ruleta
   showFortuneWheel: boolean = false;
   lovePrizes: Prize[] = [
     {
@@ -119,6 +129,7 @@ export class CalculadoraAmorComponent
     },
   ];
   private wheelTimer: any;
+
   private backendUrl = environment.apiUrl;
 
   // Formulario reactivo
@@ -146,103 +157,144 @@ export class CalculadoraAmorComponent
     'Los números del amor danzan ante mí y revelan tu presencia... Cada cálculo revela un destino romántico. ¿Qué pareja quieres que analice numerológicamente para ti?',
   ];
 
+  // Altura del textarea
+  textareaHeight: number = 45;
+  private readonly minTextareaHeight = 45;
+  private readonly maxTextareaHeight = 120;
+
   constructor(
     private calculadoraAmorService: CalculadoraAmorService,
     private formBuilder: FormBuilder,
     private http: HttpClient,
     private cdr: ChangeDetectorRef,
-    private paypalService: PaypalService // ← AGREGAR ESTA LÍNEA
+    private mercadopagoService: MercadopagoService
   ) {
     this.compatibilityForm = this.createCompatibilityForm();
   }
 
   async ngOnInit(): Promise<void> {
-    // ✅ Verificar pago SOLO de este servicio específico
+    console.log('💕 ====== INICIANDO CALCULADORA DE AMOR ======');
+
+    // ✅ PASO 1: Verificar si ya está pagado
     this.hasUserPaidForLove =
-      sessionStorage.getItem('hasUserPaidForLove_liebesrechner') === 'true';
+      sessionStorage.getItem('hasUserPaidForLove_liebesrechner') === 'true' ||
+      this.mercadopagoService.isServicePaid('9');
 
-    const paymentStatus = this.paypalService.checkPaymentStatusFromUrl();
+    console.log('📊 Estado de pago inicial:', this.hasUserPaidForLove);
 
-    if (paymentStatus && paymentStatus.status === 'COMPLETED') {
-      try {
-        const verification = await this.paypalService.verifyAndProcessPayment(
-          paymentStatus.token
-        );
+    // ✅ PASO 2: Verificar si viene de MercadoPago
+    if (this.mercadopagoService.hasPaymentParams()) {
+      console.log('🔄 Detectados parámetros de pago en URL');
 
-        if (verification.valid && verification.status === 'approved') {
-          // ✅ Pago SOLO para este servicio (Liebesrechner)
-          this.hasUserPaidForLove = true;
-          sessionStorage.setItem('hasUserPaidForLove_liebesrechner', 'true');
+      const paymentStatus = this.mercadopagoService.checkPaymentStatusFromUrl();
 
-          // NO usar localStorage global
-          localStorage.removeItem('paypal_payment_completed');
+      if (paymentStatus.isPaid && paymentStatus.status === 'approved') {
+        console.log('✅ ¡PAGO APROBADO!');
+        console.log('  - Payment ID:', paymentStatus.paymentId);
+        console.log('  - Service ID:', paymentStatus.serviceId);
 
-          this.blockedMessageId = null;
-          sessionStorage.removeItem('loveBlockedMessageId');
+        // Guardar estado de pago
+        this.hasUserPaidForLove = true;
+        sessionStorage.setItem('hasUserPaidForLove_liebesrechner', 'true');
+        this.mercadopagoService.saveServicePaymentStatus('9', true);
 
-          // Limpiar URL
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
+        // Desbloquear mensajes
+        this.blockedMessageId = null;
+        sessionStorage.removeItem('loveBlockedMessageId');
 
-          // Cerrar modal de pago
-          this.showPaymentModal = false;
-          this.isProcessingPayment = false;
-          this.paymentError = null;
-          this.cdr.markForCheck();
+        // Recuperar datos guardados antes del pago
+        const savedData = this.mercadopagoService.getPaymentData();
+        if (savedData) {
+          console.log('📦 Recuperando datos guardados:', savedData);
 
-          // ✅ MENSAJE DE CONFIRMACIÓN (usando conversationHistory.push con interfaz correcta)
-          setTimeout(() => {
-            const successMessage: ConversationMessage = {
-              role: 'love_expert',
-              message:
-                '🎉 ¡Pago completado exitosamente!\n\n' +
-                '✨ Gracias por tu pago. Ahora tienes acceso completo a las calculadoras de amor.\n\n' +
-                '💕 ¡Descubramos juntos los secretos del amor!\n\n' +
-                '📌 Nota: Este pago es válido solo para el servicio de calculadora de amor. Para otros servicios se requiere un pago separado.',
-              timestamp: new Date(),
-            };
-            this.conversationHistory.push(successMessage);
-            this.saveMessagesToSession();
-            this.cdr.detectChanges();
-            setTimeout(() => this.scrollToBottom(), 200);
-          }, 1000);
-        } else {
-          this.paymentError = 'No se pudo verificar el pago.';
+          // Recuperar mensajes del chat
+          if (
+            savedData.conversationHistory &&
+            savedData.conversationHistory.length > 0
+          ) {
+            this.conversationHistory = savedData.conversationHistory.map(
+              (msg: any) => ({
+                ...msg,
+                timestamp: new Date(msg.timestamp),
+              })
+            );
+            this.hasStartedConversation = true;
+            console.log(
+              '💬 Mensajes recuperados:',
+              this.conversationHistory.length
+            );
+          }
 
-          setTimeout(() => {
-            const errorMessage: ConversationMessage = {
-              role: 'love_expert',
-              message:
-                '⚠️ Hubo un problema al verificar tu pago. Por favor, intenta de nuevo o contacta con nuestro soporte.',
-              timestamp: new Date(),
-            };
-            this.conversationHistory.push(errorMessage);
-            this.saveMessagesToSession();
-            this.cdr.detectChanges();
-          }, 800);
+          // Recuperar contador de mensajes
+          if (savedData.userMessageCount !== undefined) {
+            this.userMessageCount = savedData.userMessageCount;
+          }
+
+          // Recuperar datos de usuario
+          if (savedData.userData) {
+            this.userData = savedData.userData;
+            sessionStorage.setItem(
+              'userData',
+              JSON.stringify(savedData.userData)
+            );
+          }
         }
-      } catch (error) {
-        console.error('Error verificando pago de PayPal:', error);
-        this.paymentError = 'Error en la verificación del pago';
 
-        setTimeout(() => {
-          const errorMessage: ConversationMessage = {
-            role: 'love_expert',
-            message:
-              '❌ Lamentablemente, ocurrió un error al verificar tu pago. Por favor, intenta de nuevo más tarde.',
-            timestamp: new Date(),
-          };
-          this.conversationHistory.push(errorMessage);
-          this.saveMessagesToSession();
-          this.cdr.detectChanges();
-        }, 800);
+        // Limpiar datos de pago temporal
+        this.mercadopagoService.clearPaymentData();
+
+        // Limpiar parámetros de la URL
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
+
+        // Agregar mensaje de confirmación de pago
+        const successMessage: ConversationMessage = {
+          role: 'love_expert',
+          message: `✨ **¡Pago confirmado exitosamente!** ✨
+
+💕 Ahora tienes acceso completo e ilimitado a mis servicios de compatibilidad amorosa.
+
+Las energías del amor fluyen libremente hacia ti. Puedes preguntarme lo que desees sobre tu compatibilidad, relaciones y el destino romántico que te aguarda.
+
+¿Qué secreto del amor quieres descubrir?`,
+          timestamp: new Date(),
+        };
+        this.conversationHistory.push(successMessage);
+        this.saveMessagesToSession();
+
+        // Procesar mensaje pendiente si existe
+        const pendingMessage = sessionStorage.getItem('pendingLoveMessage');
+        if (pendingMessage) {
+          console.log('📨 Procesando mensaje pendiente:', pendingMessage);
+          sessionStorage.removeItem('pendingLoveMessage');
+          setTimeout(() => {
+            this.processLoveUserMessage(pendingMessage);
+          }, 2000);
+        }
+
+        this.cdr.markForCheck();
+        return;
+      } else if (paymentStatus.status === 'pending') {
+        console.log('⏳ Pago pendiente');
+        const pendingMessage: ConversationMessage = {
+          role: 'love_expert',
+          message:
+            '⏳ Tu pago está siendo procesado. Te notificaremos cuando se confirme.',
+          timestamp: new Date(),
+        };
+        this.conversationHistory.push(pendingMessage);
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
+      } else if (
+        paymentStatus.status === 'rejected' ||
+        paymentStatus.status === 'failure'
+      ) {
+        console.log('❌ Pago rechazado o fallido');
+        this.paymentError =
+          'El pago no se pudo completar. Por favor, intenta nuevamente.';
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
       }
     }
 
-    // ✅ NUEVO: Cargar datos del usuario desde sessionStorage
+    // ✅ PASO 3: Cargar datos del usuario desde sessionStorage
     const savedUserData = sessionStorage.getItem('userData');
     if (savedUserData) {
       try {
@@ -250,27 +302,43 @@ export class CalculadoraAmorComponent
       } catch (error) {
         this.userData = null;
       }
-    } else {
-      this.userData = null;
     }
 
-    // ✅ REFACTORIZAR: Separar carga de datos
-    this.loadLoveData();
+    // ✅ PASO 4: Cargar mensajes guardados
+    if (this.conversationHistory.length === 0) {
+      this.loadLoveData();
+    }
 
+    // ✅ PASO 5: Si ya pagó, desbloquear todo
+    if (this.hasUserPaidForLove && this.blockedMessageId) {
+      console.log('🔓 Desbloqueando mensajes (usuario ya pagó)');
+      this.blockedMessageId = null;
+      sessionStorage.removeItem('loveBlockedMessageId');
+    }
+
+    // Cargar info del experto
     this.loadLoveExpertInfo();
     this.subscribeToCompatibilityData();
 
-    // ✅ TAMBIÉN VERIFICAR PARA MENSAJES RESTAURADOS
+    // Mostrar ruleta si aplica
     if (
       this.conversationHistory.length > 0 &&
       FortuneWheelComponent.canShowWheel()
     ) {
       this.showLoveWheelAfterDelay(2000);
     }
+
+    console.log('💕 ====== INICIALIZACIÓN COMPLETADA ======');
+    console.log('  - Usuario pagó:', this.hasUserPaidForLove);
+    console.log('  - Mensajes:', this.conversationHistory.length);
+    console.log('  - Contador mensajes usuario:', this.userMessageCount);
+
+    this.cdr.markForCheck();
   }
+
   private loadLoveData(): void {
     const savedMessages = sessionStorage.getItem('loveMessages');
-    const savedFirstQuestion = sessionStorage.getItem('loveFirstQuestionAsked');
+    const savedMessageCount = sessionStorage.getItem('loveUserMessageCount');
     const savedBlockedMessageId = sessionStorage.getItem(
       'loveBlockedMessageId'
     );
@@ -282,10 +350,16 @@ export class CalculadoraAmorComponent
           ...msg,
           timestamp: new Date(msg.timestamp),
         }));
-        this.firstQuestionAsked = savedFirstQuestion === 'true';
+        this.userMessageCount = parseInt(savedMessageCount || '0');
         this.blockedMessageId = savedBlockedMessageId || null;
         this.hasStartedConversation = true;
+        this.lastMessageCount = this.conversationHistory.length;
+        console.log(
+          '💬 Mensajes cargados de sesión:',
+          this.conversationHistory.length
+        );
       } catch (error) {
+        console.error('Error parseando mensajes:', error);
         this.clearSessionData();
         this.initializeLoveWelcomeMessage();
       }
@@ -293,7 +367,11 @@ export class CalculadoraAmorComponent
       this.initializeLoveWelcomeMessage();
     }
   }
+
   private initializeLoveWelcomeMessage(): void {
+    this.userMessageCount = 0;
+    sessionStorage.setItem('loveUserMessageCount', '0');
+
     const randomWelcome =
       this.welcomeMessages[
         Math.floor(Math.random() * this.welcomeMessages.length)
@@ -308,27 +386,11 @@ export class CalculadoraAmorComponent
     this.conversationHistory.push(welcomeMessage);
     this.hasStartedConversation = true;
 
-    // ✅ VERIFICACIÓN DE RULETA AMOROSA
     if (FortuneWheelComponent.canShowWheel()) {
       this.showLoveWheelAfterDelay(3000);
-    } else {
     }
   }
 
-  openDataModalForPayment(): void {
-    // Cerrar otros modales que puedan estar abiertos
-    this.showFortuneWheel = false;
-    this.showPaymentModal = false;
-
-    // Guardar el estado antes de proceder
-    this.saveStateBeforePayment();
-
-    // Abrir el modal de recolecta de datos
-    setTimeout(() => {
-      this.showDataModal = true;
-      this.cdr.markForCheck();
-    }, 100);
-  }
   ngAfterViewChecked(): void {
     if (
       this.shouldAutoScroll &&
@@ -356,22 +418,362 @@ export class CalculadoraAmorComponent
     this.destroy$.complete();
   }
 
-  autoResize(event: any): void {
-    const textarea = event.target;
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-  }
+  // ========== MÉTODOS DE ENVÍO DE MENSAJES ==========
 
-  startConversation(): void {
-    if (this.conversationHistory.length === 0) {
-      this.initializeLoveWelcomeMessage();
+  sendMessage(): void {
+    if (!this.currentMessage.trim() || this.isLoading) return;
+
+    const userMessage = this.currentMessage.trim();
+
+    console.log('📤 Enviando mensaje...');
+    console.log('  - Usuario pagó:', this.hasUserPaidForLove);
+    console.log('  - Contador mensajes:', this.userMessageCount);
+
+    // ✅ Si ya pagó, procesar mensaje directamente
+    if (this.hasUserPaidForLove) {
+      console.log('✅ Usuario tiene acceso completo, procesando mensaje...');
+      this.shouldAutoScroll = true;
+      this.processLoveUserMessage(userMessage);
+      return;
     }
-    this.hasStartedConversation = true;
+
+    // ✅ Verificar consultas gratis
+    if (this.hasFreeLoveConsultationsAvailable()) {
+      console.log('🎁 Usando consulta gratuita');
+      this.useFreeLoveConsultation();
+      this.shouldAutoScroll = true;
+      this.processLoveUserMessage(userMessage);
+      return;
+    }
+
+    // ✅ Verificar si es el 3er mensaje o posterior
+    if (this.userMessageCount >= this.MESSAGES_BEFORE_PAYMENT - 1) {
+      console.log(`🔒 Mensaje #${this.userMessageCount + 1} - Requiere pago`);
+
+      // Cerrar otros modales
+      this.showFortuneWheel = false;
+      this.showPaymentModal = false;
+
+      // Guardar mensaje pendiente
+      sessionStorage.setItem('pendingLoveMessage', userMessage);
+
+      // Guardar estado antes del pago
+      this.saveStateBeforePayment();
+
+      // Mostrar modal de datos
+      setTimeout(() => {
+        this.showDataModal = true;
+        this.cdr.markForCheck();
+      }, 100);
+
+      return;
+    }
+
+    // Procesar mensaje normalmente (mensajes 1 y 2)
+    this.shouldAutoScroll = true;
+    this.processLoveUserMessage(userMessage);
   }
 
-  /**
-   * Crea el formulario reactivo para los datos de compatibilidad
-   */
+  private processLoveUserMessage(userMessage: string): void {
+    // Incrementar contador de mensajes del usuario
+    this.userMessageCount++;
+    sessionStorage.setItem(
+      'loveUserMessageCount',
+      this.userMessageCount.toString()
+    );
+
+    console.log(`📨 Mensaje del usuario #${this.userMessageCount}`);
+
+    // Agregar mensaje del usuario
+    const userMsg: ConversationMessage = {
+      role: 'user',
+      message: userMessage,
+      timestamp: new Date(),
+    };
+    this.conversationHistory.push(userMsg);
+
+    this.saveMessagesToSession();
+    this.currentMessage = '';
+    this.isTyping = true;
+    this.isLoading = true;
+
+    const compatibilityData =
+      this.calculadoraAmorService.getCompatibilityData();
+
+    // Enviar al servicio
+    this.calculadoraAmorService
+      .chatWithLoveExpert(
+        userMessage,
+        compatibilityData?.person1Name,
+        compatibilityData?.person1BirthDate,
+        compatibilityData?.person2Name,
+        compatibilityData?.person2BirthDate
+      )
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.isLoading = false;
+          this.isTyping = false;
+          this.shouldAutoScroll = true;
+
+          if (response.success && response.response) {
+            const messageId = Date.now().toString();
+
+            const loveExpertMsg: ConversationMessage = {
+              role: 'love_expert',
+              message: response.response,
+              timestamp: new Date(),
+              id: messageId,
+            };
+            this.conversationHistory.push(loveExpertMsg);
+
+            // ✅ Verificar si debe bloquear después del 3er mensaje
+            if (
+              !this.hasUserPaidForLove &&
+              !this.hasFreeLoveConsultationsAvailable() &&
+              this.userMessageCount >= this.MESSAGES_BEFORE_PAYMENT
+            ) {
+              this.blockedMessageId = messageId;
+              sessionStorage.setItem('loveBlockedMessageId', messageId);
+
+              // Mostrar modal de pago después de 2 segundos
+              setTimeout(() => {
+                this.saveStateBeforePayment();
+                this.showFortuneWheel = false;
+                this.showPaymentModal = false;
+
+                setTimeout(() => {
+                  this.showDataModal = true;
+                  this.cdr.markForCheck();
+                }, 100);
+              }, 2000);
+            }
+
+            this.saveMessagesToSession();
+            this.cdr.markForCheck();
+          } else {
+            this.handleError(
+              'Error al obtener la respuesta del experto en amor'
+            );
+          }
+        },
+        error: (error: any) => {
+          console.error('Error en chat:', error);
+          this.isLoading = false;
+          this.isTyping = false;
+          this.handleError('Error de conexión. Por favor, inténtalo de nuevo.');
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  // ========== MÉTODOS DE GUARDADO Y SESIÓN ==========
+
+  private saveStateBeforePayment(): void {
+    console.log('💾 Guardando estado antes del pago...');
+
+    this.saveMessagesToSession();
+
+    sessionStorage.setItem(
+      'loveUserMessageCount',
+      this.userMessageCount.toString()
+    );
+
+    if (this.blockedMessageId) {
+      sessionStorage.setItem('loveBlockedMessageId', this.blockedMessageId);
+    }
+
+    // Guardar datos para MercadoPago
+    const paymentData = {
+      conversationHistory: this.conversationHistory.map((msg) => ({
+        ...msg,
+        timestamp:
+          msg.timestamp instanceof Date
+            ? msg.timestamp.toISOString()
+            : msg.timestamp,
+      })),
+      userMessageCount: this.userMessageCount,
+      userData: this.userData,
+      blockedMessageId: this.blockedMessageId,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.mercadopagoService.savePaymentData(paymentData);
+    console.log('✅ Estado guardado para recuperar después del pago');
+  }
+
+  private saveMessagesToSession(): void {
+    try {
+      const messagesToSave = this.conversationHistory.map((msg) => ({
+        ...msg,
+        timestamp:
+          msg.timestamp instanceof Date
+            ? msg.timestamp.toISOString()
+            : msg.timestamp,
+      }));
+      sessionStorage.setItem('loveMessages', JSON.stringify(messagesToSave));
+    } catch (error) {
+      console.error('Error guardando mensajes:', error);
+    }
+  }
+
+  private clearSessionData(): void {
+    sessionStorage.removeItem('loveMessages');
+    sessionStorage.removeItem('loveUserMessageCount');
+    sessionStorage.removeItem('loveBlockedMessageId');
+  }
+
+  isMessageBlocked(message: ConversationMessage): boolean {
+    return message.id === this.blockedMessageId && !this.hasUserPaidForLove;
+  }
+
+  // ========== MÉTODOS DE PAGO (MERCADOPAGO) ==========
+
+  onUserDataSubmitted(userData: any): void {
+    console.log('📋 Datos del usuario recibidos:', userData);
+
+    // Guardar datos
+    this.userData = userData;
+    sessionStorage.setItem('userData', JSON.stringify(userData));
+
+    // El modal ya maneja la redirección a MercadoPago
+    this.showDataModal = false;
+    this.cdr.markForCheck();
+  }
+
+  onDataModalClosed(): void {
+    this.showDataModal = false;
+    this.cdr.markForCheck();
+  }
+
+  // ========== MÉTODOS DE LA RULETA ==========
+
+  showLoveWheelAfterDelay(delayMs: number = 3000): void {
+    if (this.wheelTimer) {
+      clearTimeout(this.wheelTimer);
+    }
+
+    this.wheelTimer = setTimeout(() => {
+      if (
+        FortuneWheelComponent.canShowWheel() &&
+        !this.showPaymentModal &&
+        !this.showDataModal
+      ) {
+        this.showFortuneWheel = true;
+        this.cdr.markForCheck();
+      }
+    }, delayMs);
+  }
+
+  onPrizeWon(prize: Prize): void {
+    const prizeMessage: ConversationMessage = {
+      role: 'love_expert',
+      message: `💕 ¡El verdadero amor ha conspirado a tu favor! Has ganado: **${prize.name}** ${prize.icon}\n\nLas fuerzas románticas del universo han decidido bendecirte con este regalo celestial.`,
+      timestamp: new Date(),
+    };
+
+    this.conversationHistory.push(prizeMessage);
+    this.shouldAutoScroll = true;
+    this.saveMessagesToSession();
+    this.processLovePrize(prize);
+  }
+
+  onWheelClosed(): void {
+    this.showFortuneWheel = false;
+  }
+
+  triggerLoveWheel(): void {
+    if (this.showPaymentModal || this.showDataModal) {
+      return;
+    }
+
+    if (FortuneWheelComponent.canShowWheel()) {
+      this.showFortuneWheel = true;
+      this.cdr.markForCheck();
+    } else {
+      alert(
+        'No tienes giros disponibles. ' + FortuneWheelComponent.getSpinStatus()
+      );
+    }
+  }
+
+  getSpinStatus(): string {
+    return FortuneWheelComponent.getSpinStatus();
+  }
+
+  private processLovePrize(prize: Prize): void {
+    switch (prize.id) {
+      case '1':
+        this.addFreeLoveConsultations(3);
+        break;
+      case '2':
+        this.hasUserPaidForLove = true;
+        sessionStorage.setItem('hasUserPaidForLove_liebesrechner', 'true');
+        this.mercadopagoService.saveServicePaymentStatus('9', true);
+
+        if (this.blockedMessageId) {
+          this.blockedMessageId = null;
+          sessionStorage.removeItem('loveBlockedMessageId');
+        }
+
+        const premiumMessage: ConversationMessage = {
+          role: 'love_expert',
+          message:
+            '💖 **¡Has desbloqueado el acceso Premium completo!** 💖\n\nAhora tienes acceso ilimitado a todos mis servicios de compatibilidad amorosa.',
+          timestamp: new Date(),
+        };
+        this.conversationHistory.push(premiumMessage);
+        this.shouldAutoScroll = true;
+        this.saveMessagesToSession();
+        break;
+      case '4':
+        break;
+      default:
+    }
+  }
+
+  private addFreeLoveConsultations(count: number): void {
+    const current = parseInt(
+      sessionStorage.getItem('freeLoveConsultations') || '0'
+    );
+    const newTotal = current + count;
+    sessionStorage.setItem('freeLoveConsultations', newTotal.toString());
+
+    if (this.blockedMessageId && !this.hasUserPaidForLove) {
+      this.blockedMessageId = null;
+      sessionStorage.removeItem('loveBlockedMessageId');
+    }
+  }
+
+  private hasFreeLoveConsultationsAvailable(): boolean {
+    const freeConsultations = parseInt(
+      sessionStorage.getItem('freeLoveConsultations') || '0'
+    );
+    return freeConsultations > 0;
+  }
+
+  private useFreeLoveConsultation(): void {
+    const freeConsultations = parseInt(
+      sessionStorage.getItem('freeLoveConsultations') || '0'
+    );
+
+    if (freeConsultations > 0) {
+      const remaining = freeConsultations - 1;
+      sessionStorage.setItem('freeLoveConsultations', remaining.toString());
+
+      const prizeMsg: ConversationMessage = {
+        role: 'love_expert',
+        message: `✨ *Has utilizado una consulta de amor gratuita* ✨\n\nTe quedan **${remaining}** consultas gratuitas disponibles.`,
+        timestamp: new Date(),
+      };
+      this.conversationHistory.push(prizeMsg);
+      this.shouldAutoScroll = true;
+      this.saveMessagesToSession();
+    }
+  }
+
+  // ========== MÉTODOS DE FORMULARIO Y UI ==========
+
   private createCompatibilityForm(): FormGroup {
     return this.formBuilder.group({
       person1Name: ['', [Validators.required, Validators.minLength(2)]],
@@ -381,9 +783,6 @@ export class CalculadoraAmorComponent
     });
   }
 
-  /**
-   * Carga la información del experto en amor
-   */
   private loadLoveExpertInfo(): void {
     this.calculadoraAmorService
       .getLoveExpertInfo()
@@ -394,14 +793,12 @@ export class CalculadoraAmorComponent
           this.cdr.markForCheck();
         },
         error: (error) => {
+          console.error('Error cargando info del experto:', error);
           this.cdr.markForCheck();
         },
       });
   }
 
-  /**
-   * Se suscribe a los datos de compatibilidad
-   */
   private subscribeToCompatibilityData(): void {
     this.calculadoraAmorService.compatibilityData$
       .pipe(takeUntil(this.destroy$))
@@ -413,9 +810,6 @@ export class CalculadoraAmorComponent
       });
   }
 
-  /**
-   * Puebla el formulario con los datos de compatibilidad
-   */
   private populateFormWithData(data: CompatibilityData): void {
     this.compatibilityForm.patchValue({
       person1Name: data.person1Name,
@@ -425,9 +819,6 @@ export class CalculadoraAmorComponent
     });
   }
 
-  /**
-   * Calcula la compatibilidad entre las dos personas
-   */
   calculateCompatibility(): void {
     if (this.compatibilityForm.invalid) {
       this.markFormGroupTouched();
@@ -462,9 +853,6 @@ export class CalculadoraAmorComponent
       });
   }
 
-  /**
-   * Maneja la respuesta del cálculo de compatibilidad
-   */
   private handleCalculationResponse(response: LoveCalculatorResponse): void {
     if (response.success) {
       this.hasStartedConversation = true;
@@ -479,327 +867,84 @@ export class CalculadoraAmorComponent
       this.conversationHistory.push(calculationMsg);
       this.saveMessagesToSession();
       this.shouldAutoScroll = true;
-    } else {
     }
   }
 
-  sendMessage(): void {
-    if (!this.currentMessage.trim() || this.isLoading) return;
-
-    const userMessage = this.currentMessage.trim();
-
-    // ✅ NUEVA LÓGICA: Verificar consultas amorosas gratuitas ANTES de verificar pago
-    if (!this.hasUserPaidForLove && this.firstQuestionAsked) {
-      // Verificar si tiene consultas amorosas gratis disponibles
-      if (this.hasFreeLoveConsultationsAvailable()) {
-        this.useFreeLoveConsultation();
-        // Continuar con el mensaje sin bloquear
-      } else {
-        // Cerrar otros modales primero
-        this.showFortuneWheel = false;
-        this.showPaymentModal = false;
-
-        // Guardar el mensaje para procesarlo después del pago
-        sessionStorage.setItem('pendingLoveMessage', userMessage);
-
-        this.saveStateBeforePayment();
-
-        // Mostrar modal de datos con timeout
-        setTimeout(() => {
-          this.showDataModal = true;
-          this.cdr.markForCheck();
-        }, 100);
-
-        return; // Salir aquí para no procesar el mensaje aún
-      }
+  startConversation(): void {
+    if (this.conversationHistory.length === 0) {
+      this.initializeLoveWelcomeMessage();
     }
-
-    // Procesar mensaje normalmente
-    this.processLoveUserMessage(userMessage);
-  }
-  private processLoveUserMessage(userMessage: string): void {
-    this.shouldAutoScroll = true;
-
-    // Agregar mensaje del usuario
-    const userMsg: ConversationMessage = {
-      role: 'user',
-      message: userMessage,
-      timestamp: new Date(),
-    };
-    this.conversationHistory.push(userMsg);
-
-    this.saveMessagesToSession();
-    this.currentMessage = '';
-    this.isTyping = true;
-    this.isLoading = true;
-
-    const compatibilityData =
-      this.calculadoraAmorService.getCompatibilityData();
-
-    // Preparar historial de conversación
-    const conversationHistoryForService = this.conversationHistory
-      .slice(-10)
-      .map((msg) => ({
-        role:
-          msg.role === 'user' ? ('user' as const) : ('love_expert' as const),
-        message: msg.message,
-      }));
-
-    // Enviar al servicio
-    this.calculadoraAmorService
-      .chatWithLoveExpert(
-        userMessage,
-        compatibilityData?.person1Name,
-        compatibilityData?.person1BirthDate,
-        compatibilityData?.person2Name,
-        compatibilityData?.person2BirthDate
-      )
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (response) => {
-          this.isLoading = false;
-          this.isTyping = false;
-
-          if (response.success && response.response) {
-            const messageId = Date.now().toString();
-
-            const loveExpertMsg: ConversationMessage = {
-              role: 'love_expert',
-              message: response.response,
-              timestamp: new Date(),
-              id: messageId,
-            };
-            this.conversationHistory.push(loveExpertMsg);
-
-            this.shouldAutoScroll = true;
-
-            // ✅ LÓGICA MODIFICADA: Solo bloquear si no tiene consultas gratis Y no ha pagado
-            if (
-              this.firstQuestionAsked &&
-              !this.hasUserPaidForLove &&
-              !this.hasFreeLoveConsultationsAvailable()
-            ) {
-              this.blockedMessageId = messageId;
-              sessionStorage.setItem('loveBlockedMessageId', messageId);
-
-              setTimeout(() => {
-                this.saveStateBeforePayment();
-
-                // Cerrar otros modales
-                this.showFortuneWheel = false;
-                this.showPaymentModal = false;
-
-                // Mostrar modal de datos
-                setTimeout(() => {
-                  this.showDataModal = true;
-                  this.cdr.markForCheck();
-                }, 100);
-              }, 2000);
-            } else if (!this.firstQuestionAsked) {
-              this.firstQuestionAsked = true;
-              sessionStorage.setItem('loveFirstQuestionAsked', 'true');
-            }
-
-            this.saveMessagesToSession();
-            this.cdr.markForCheck();
-          } else {
-            this.handleError(
-              'Error al obtener la respuesta del experto en amor'
-            );
-          }
-        },
-        error: (error: any) => {
-          this.isLoading = false;
-          this.isTyping = false;
-          this.handleError('Error de conexión. Por favor, inténtalo de nuevo.');
-          this.cdr.markForCheck();
-        },
-      });
+    this.hasStartedConversation = true;
   }
 
-  private saveStateBeforePayment(): void {
-    this.saveMessagesToSession();
-    sessionStorage.setItem(
-      'loveFirstQuestionAsked',
-      this.firstQuestionAsked.toString()
-    );
-    if (this.blockedMessageId) {
-      sessionStorage.setItem('loveBlockedMessageId', this.blockedMessageId);
-    }
-  }
-
-  private saveMessagesToSession(): void {
-    try {
-      const messagesToSave = this.conversationHistory.map((msg) => ({
-        ...msg,
-        timestamp:
-          msg.timestamp instanceof Date
-            ? msg.timestamp.toISOString()
-            : msg.timestamp,
-      }));
-      sessionStorage.setItem('loveMessages', JSON.stringify(messagesToSave));
-    } catch (error) {}
-  }
-
-  private clearSessionData(): void {
-    sessionStorage.removeItem('hasUserPaidForLove');
-    sessionStorage.removeItem('loveMessages');
-    sessionStorage.removeItem('loveFirstQuestionAsked');
-    sessionStorage.removeItem('loveBlockedMessageId');
-  }
-
-  isMessageBlocked(message: ConversationMessage): boolean {
-    return message.id === this.blockedMessageId && !this.hasUserPaidForLove;
-  }
-
-  // ✅ MÉTODO MIGRADO A PAYPAL
-  async promptForPayment(): Promise<void> {
-    this.showPaymentModal = true;
-    this.cdr.markForCheck();
-    this.paymentError = null;
-    this.isProcessingPayment = false;
-
-    // Validar datos de usuario
-    if (!this.userData) {
-      const savedUserData = sessionStorage.getItem('userData');
-      if (savedUserData) {
-        try {
-          this.userData = JSON.parse(savedUserData);
-        } catch (error) {
-          this.userData = null;
-        }
-      }
-    }
-
-    if (!this.userData) {
-      this.paymentError =
-        'No se encontraron datos del cliente. Por favor, complete el formulario primero.';
-      this.showDataModal = true;
-      this.cdr.markForCheck();
-      return;
-    }
-
-    const email = this.userData.email?.toString().trim();
-    if (!email) {
-      this.paymentError =
-        'Correo electrónico requerido. Por favor, complete el formulario.';
-      this.showDataModal = true;
-      this.cdr.markForCheck();
-      return;
-    }
-
-    // ✅ Guardar mensaje pendiente si existe
-    if (this.currentMessage?.trim()) {
-      sessionStorage.setItem('pendingLoveMessage', this.currentMessage.trim());
-    }
-  }
-
-  // ✅ MÉTODO MIGRADO A PAYPAL
-  async handlePaymentSubmit(): Promise<void> {
-    this.isProcessingPayment = true;
-    this.paymentError = null;
-    this.cdr.markForCheck();
-
-    try {
-      await this.paypalService.initiatePayment({
-        amount: '4.00',
-        currency: 'EUR',
-        serviceName: 'Calculadora de amor',
-        returnPath: '/calculadora-amor',
-        cancelPath: '/calculadora-amor',
-      });
-    } catch (error: any) {
-      this.paymentError =
-        error.message || 'Error al inicializar el pago de PayPal.';
-      this.isProcessingPayment = false;
-      this.cdr.markForCheck();
-    }
-  }
-
-  // ✅ MÉTODO SIMPLIFICADO - PayPal no requiere cleanup
-  cancelPayment(): void {
-    this.showPaymentModal = false;
-    this.isProcessingPayment = false;
-    this.paymentError = null;
-    this.cdr.markForCheck();
+  autoResize(event: any): void {
+    const textarea = event.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   }
 
   adjustTextareaHeight(event: any): void {
     const textarea = event.target;
-
-    // Resetear altura para obtener scrollHeight correcto
     textarea.style.height = 'auto';
-
-    // Calcular nueva altura basada en el contenido
     const newHeight = Math.min(
       Math.max(textarea.scrollHeight, this.minTextareaHeight),
       this.maxTextareaHeight
     );
-
-    // Aplicar nueva altura
     this.textareaHeight = newHeight;
     textarea.style.height = newHeight + 'px';
   }
+
   onEnterPressed(event: KeyboardEvent): void {
     if (event.shiftKey) {
-      // Permitir nueva línea con Shift+Enter
       return;
     }
-
     event.preventDefault();
-
     if (this.canSendMessage() && !this.isLoading) {
       this.sendMessage();
-      // Resetear altura del textarea después del envío
       setTimeout(() => {
         this.textareaHeight = this.minTextareaHeight;
       }, 50);
     }
   }
+
+  onKeyPress(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.sendMessage();
+    }
+  }
+
   canSendMessage(): boolean {
     return !!(this.currentMessage && this.currentMessage.trim().length > 0);
   }
 
-  // Método para resetear el chat
-  resetChat(): void {
-    // Limpiar el historial de conversación
+  clearConversation(): void {
     this.conversationHistory = [];
-
-    // Limpiar el mensaje actual
     this.currentMessage = '';
-
-    // Resetear flags
+    this.lastMessageCount = 0;
+    this.userMessageCount = 0;
+    this.blockedMessageId = null;
     this.isLoading = false;
-    this.isTyping = false;
+    this.hasStartedConversation = false;
 
-    // Agregar mensaje de bienvenida inicial
-    this.addWelcomeMessage();
+    this.clearSessionData();
+    this.calculadoraAmorService.resetService();
+    this.compatibilityForm.reset();
 
-    // Forzar detección de cambios
+    this.shouldAutoScroll = true;
+    this.initializeLoveWelcomeMessage();
     this.cdr.markForCheck();
-
-    // Scroll al inicio
-    setTimeout(() => {
-      this.scrollToBottom();
-    }, 100);
-  }
-  private addWelcomeMessage(): void {
-    const welcomeMessage = {
-      id: Date.now().toString(),
-      role: 'love_expert' as const,
-      message:
-        '¡Hola! Soy la Maestra Paula, tu guía en el mundo del amor y la compatibilidad numerológica. ¿Cómo puedo ayudarte hoy? 💕',
-      timestamp: new Date(),
-      isBlocked: false,
-    };
-
-    this.conversationHistory.push(welcomeMessage);
   }
 
-  // ✅ Métodos de pago movidos arriba - eliminados duplicados
+  newConsultation(): void {
+    this.clearConversation();
+  }
+
+  resetChat(): void {
+    this.clearConversation();
+  }
 
   savePersonalData(): void {
-    // Implementar guardado de datos personales si es necesario
     this.showDataForm = false;
   }
 
@@ -807,61 +952,42 @@ export class CalculadoraAmorComponent
     this.showDataForm = !this.showDataForm;
   }
 
-  /**
-   * Envía un mensaje predefinido
-   */
-  private sendPredefinedMessage(message: string): void {
-    this.currentMessage = message;
-    this.sendMessage();
-  }
-
-  newConsultation(): void {
-    this.shouldAutoScroll = true;
-    this.lastMessageCount = 0;
-
-    if (!this.hasUserPaidForLove) {
-      this.firstQuestionAsked = false;
-      this.blockedMessageId = null;
-      this.clearSessionData();
-    } else {
-      sessionStorage.removeItem('loveMessages');
-      sessionStorage.removeItem('loveFirstQuestionAsked');
-      sessionStorage.removeItem('loveBlockedMessageId');
-      this.firstQuestionAsked = false;
-      this.blockedMessageId = null;
-    }
-
-    this.conversationHistory = [];
-    this.hasStartedConversation = false;
-    this.calculadoraAmorService.resetService();
-    this.compatibilityForm.reset();
-    this.initializeLoveWelcomeMessage();
-    this.cdr.markForCheck();
-  }
-
-  /**
-   * TrackBy function para optimizar el rendering de mensajes
-   */
   trackByMessage(index: number, message: ConversationMessage): string {
     return `${message.role}-${message.timestamp.getTime()}-${index}`;
   }
 
-  /**
-   * Formatea la hora de un mensaje
-   */
   formatTime(timestamp: Date | string): string {
     try {
       const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-      if (isNaN(date.getTime())) {
-        return 'N/A';
-      }
-      return date.toLocaleTimeString('de-DE', {
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleTimeString('es-CO', {
         hour: '2-digit',
         minute: '2-digit',
       });
-    } catch (error) {
+    } catch {
       return 'N/A';
     }
+  }
+
+  getTimeString(timestamp: Date | string): string {
+    return this.formatTime(timestamp);
+  }
+
+  formatMessage(content: string): string {
+    if (!content) return '';
+
+    let formattedContent = content;
+    formattedContent = formattedContent.replace(
+      /\*\*(.*?)\*\*/g,
+      '<strong>$1</strong>'
+    );
+    formattedContent = formattedContent.replace(/\n/g, '<br>');
+    formattedContent = formattedContent.replace(
+      /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
+      '<em>$1</em>'
+    );
+
+    return formattedContent;
   }
 
   private handleError(errorMessage: string): void {
@@ -880,25 +1006,17 @@ export class CalculadoraAmorComponent
         const element = this.scrollContainer.nativeElement;
         element.scrollTop = element.scrollHeight;
       }
-    } catch (err) {}
+    } catch {}
   }
 
-  /**
-   * Formatea una fecha para el servicio
-   */
   private formatDateForService(date: Date): string {
     if (!date) return '';
-
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
-
     return `${day}/${month}/${year}`;
   }
 
-  /**
-   * Marca todos los campos del formulario como tocados
-   */
   private markFormGroupTouched(): void {
     Object.keys(this.compatibilityForm.controls).forEach((key) => {
       const control = this.compatibilityForm.get(key);
@@ -906,9 +1024,6 @@ export class CalculadoraAmorComponent
     });
   }
 
-  /**
-   * Verifica si el formulario tiene errores específicos
-   */
   hasFormError(fieldName: string, errorType: string): boolean {
     const field = this.compatibilityForm.get(fieldName);
     return !!(
@@ -918,240 +1033,10 @@ export class CalculadoraAmorComponent
     );
   }
 
-  /**
-   * Obtiene el mensaje de error para un campo específico
-   */
   getFieldErrorMessage(fieldName: string): string {
     const field = this.compatibilityForm.get(fieldName);
-    if (field?.hasError('required')) {
-      return 'Este campo es requerido';
-    }
-
-    if (field?.hasError('minlength')) {
-      return 'Mínimo 2 caracteres';
-    }
-
+    if (field?.hasError('required')) return 'Este campo es requerido';
+    if (field?.hasError('minlength')) return 'Mínimo 2 caracteres';
     return '';
-  }
-
-  clearConversation(): void {
-    this.newConsultation();
-  }
-
-  onKeyPress(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      this.sendMessage();
-    }
-  }
-
-  getTimeString(timestamp: Date | string): string {
-    try {
-      const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-      if (isNaN(date.getTime())) {
-        return 'N/A';
-      }
-      return date.toLocaleTimeString('de-DE', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch (error) {
-      return 'N/A';
-    }
-  }
-
-  formatMessage(content: string): string {
-    if (!content) return '';
-
-    let formattedContent = content;
-
-    // Convertir **texto** a <strong>texto</strong> para negrilla
-    formattedContent = formattedContent.replace(
-      /\*\*(.*?)\*\*/g,
-      '<strong>$1</strong>'
-    );
-
-    // Convertir saltos de línea a <br> para mejor visualización
-    formattedContent = formattedContent.replace(/\n/g, '<br>');
-
-    // Opcional: También puedes manejar *texto* (una sola asterisco) como cursiva
-    formattedContent = formattedContent.replace(
-      /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
-      '<em>$1</em>'
-    );
-
-    return formattedContent;
-  }
-
-  onUserDataSubmitted(userData: any): void {
-    // ✅ VALIDAR CAMPOS CRÍTICOS ANTES DE PROCEDER
-    const requiredFields = ['email']; // ❌ QUITADO 'apellido'
-    const missingFields = requiredFields.filter(
-      (field) => !userData[field] || userData[field].toString().trim() === ''
-    );
-
-    if (missingFields.length > 0) {
-      alert(
-        `Para continuar con el pago, debes completar lo siguiente: ${missingFields.join(
-          ', '
-        )}`
-      );
-      this.showDataModal = true; // Mantener modal abierto
-      this.cdr.markForCheck();
-      return;
-    }
-
-    // ✅ LIMPIAR Y GUARDAR datos INMEDIATAMENTE en memoria Y sessionStorage
-    this.userData = {
-      ...userData,
-      email: userData.email?.toString().trim(),
-    };
-
-    // ✅ GUARDAR EN sessionStorage INMEDIATAMENTE
-    try {
-      sessionStorage.setItem('userData', JSON.stringify(this.userData));
-
-      // Verificar que se guardaron correctamente
-      const verificacion = sessionStorage.getItem('userData');
-    } catch (error) {}
-
-    this.showDataModal = false;
-    this.cdr.markForCheck();
-
-    // ✅ NUEVO: Enviar datos al backend como en otros componentes
-    this.sendUserDataToBackend(userData);
-  }
-  private sendUserDataToBackend(userData: any): void {
-    this.http.post(`${this.backendUrl}api/recolecta`, userData).subscribe({
-      next: (response) => {
-        // ✅ LLAMAR A promptForPayment QUE INICIALIZA STRIPE
-        this.promptForPayment();
-      },
-      error: (error) => {
-        // ✅ AUN ASÍ ABRIR EL MODAL DE PAGO
-        this.promptForPayment();
-      },
-    });
-  }
-  onDataModalClosed(): void {
-    this.showDataModal = false;
-    this.cdr.markForCheck();
-  }
-
-  showLoveWheelAfterDelay(delayMs: number = 3000): void {
-    if (this.wheelTimer) {
-      clearTimeout(this.wheelTimer);
-    }
-
-    this.wheelTimer = setTimeout(() => {
-      if (
-        FortuneWheelComponent.canShowWheel() &&
-        !this.showPaymentModal &&
-        !this.showDataModal
-      ) {
-        this.showFortuneWheel = true;
-        this.cdr.markForCheck();
-      } else {
-      }
-    }, delayMs);
-  }
-
-  // ✅ MANEJAR PREMIO GANADO
-  onPrizeWon(prize: Prize): void {
-    const prizeMessage: ConversationMessage = {
-      role: 'love_expert',
-      message: `💕 ¡El verdadero amor ha conspirado a tu favor! Has ganado: **${prize.name}** ${prize.icon}\n\nLas fuerzas románticas del universo han decidido bendecirte con este regalo celestial. La energía del amor fluye a través de ti y revela secretos más profundos sobre compatibilidad y romance. ¡Que el amor eterno te acompañe!`,
-      timestamp: new Date(),
-    };
-
-    this.conversationHistory.push(prizeMessage);
-    this.shouldAutoScroll = true;
-    this.saveMessagesToSession();
-
-    this.processLovePrize(prize);
-  }
-
-  // ✅ PROCESAR PREMIO ESPECÍFICO
-  private processLovePrize(prize: Prize): void {
-    switch (prize.id) {
-      case '1': // 3 Lecturas Amorosas
-        this.addFreeLoveConsultations(3);
-        break;
-      case '2': // 1 Análisis Premium
-        this.addFreeLoveConsultations(1);
-        break;
-      // ✅ ELIMINADO: case '3' - 2 Consultas Extra
-      case '4': // Otra oportunidad
-        break;
-      default:
-    }
-  }
-
-  // ✅ AGREGAR CONSULTAS GRATIS
-  private addFreeLoveConsultations(count: number): void {
-    const current = parseInt(
-      sessionStorage.getItem('freeLoveConsultations') || '0'
-    );
-    const newTotal = current + count;
-    sessionStorage.setItem('freeLoveConsultations', newTotal.toString());
-
-    if (this.blockedMessageId && !this.hasUserPaidForLove) {
-      this.blockedMessageId = null;
-      sessionStorage.removeItem('loveBlockedMessageId');
-    }
-  }
-
-  // ✅ VERIFICAR CONSULTAS GRATIS DISPONIBLES
-  private hasFreeLoveConsultationsAvailable(): boolean {
-    const freeConsultations = parseInt(
-      sessionStorage.getItem('freeLoveConsultations') || '0'
-    );
-    return freeConsultations > 0;
-  }
-  private useFreeLoveConsultation(): void {
-    const freeConsultations = parseInt(
-      sessionStorage.getItem('freeLoveConsultations') || '0'
-    );
-
-    if (freeConsultations > 0) {
-      const remaining = freeConsultations - 1;
-      sessionStorage.setItem('freeLoveConsultations', remaining.toString());
-
-      // Mostrar mensaje informativo
-      const prizeMsg: ConversationMessage = {
-        role: 'love_expert',
-        message: `✨ *Has utilizado una consulta de amor gratuita* ✨\n\nTe quedan **${remaining}** consultas de amor gratuitas disponibles.`,
-        timestamp: new Date(),
-      };
-      this.conversationHistory.push(prizeMsg);
-      this.shouldAutoScroll = true;
-      this.saveMessagesToSession();
-    }
-  }
-
-  // ✅ CERRAR RULETA
-  onWheelClosed(): void {
-    this.showFortuneWheel = false;
-  }
-
-  // ✅ ACTIVAR RULETA MANUALMENTE
-  triggerLoveWheel(): void {
-    if (this.showPaymentModal || this.showDataModal) {
-      return;
-    }
-
-    if (FortuneWheelComponent.canShowWheel()) {
-      this.showFortuneWheel = true;
-      this.cdr.markForCheck();
-    } else {
-      alert(
-        'No tienes giros disponibles. ' + FortuneWheelComponent.getSpinStatus()
-      );
-    }
-  }
-
-  // ✅ OBTENER ESTADO DE SPINS
-  getSpinStatus(): string {
-    return FortuneWheelComponent.getSpinStatus();
   }
 }

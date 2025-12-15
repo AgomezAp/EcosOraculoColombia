@@ -24,22 +24,14 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { PaypalService } from '../../services/paypal.service';
-
+import { MercadopagoService } from '../../services/mercadopago.service';
 import { HttpClient } from '@angular/common/http';
-import { RecolectaDatosComponent } from '../recolecta-datos/recolecta-datos.component';
-import { environment } from '../../environments/environmets.prod';
 import {
-  FortuneWheelComponent,
-  Prize,
-} from '../fortune-wheel/fortune-wheel.component';
-interface NumerologyMessage {
-  sender: string;
-  content: string;
-  timestamp: Date;
-  isUser: boolean;
-  id?: string;
-}
+  RecolectaDatosComponent,
+  ServiceConfig,
+} from '../recolecta-datos/recolecta-datos.component';
+import { environment } from '../../environments/environmets.prod';
+
 interface ConversationMessage {
   role: 'user' | 'numerologist';
   message: string;
@@ -60,7 +52,6 @@ interface ConversationMessage {
     MatIconModule,
     MatProgressSpinnerModule,
     RecolectaDatosComponent,
-    FortuneWheelComponent,
   ],
   templateUrl: './lectura-numerologia.component.html',
   styleUrl: './lectura-numerologia.component.css',
@@ -82,42 +73,30 @@ export class LecturaNumerologiaComponent
 
   private shouldAutoScroll = true;
   private lastMessageCount = 0;
-  //Datos para enviar
+
+  // Modal de datos
   showDataModal: boolean = false;
   userData: any = null;
 
-  // Variables para control de pagos
-  showPaymentModal: boolean = false;
+  // ✅ Configuración del servicio para MercadoPago
+  numerologyServiceConfig: ServiceConfig = {
+    serviceId: '4', // ID del servicio numerología en el backend
+    serviceName: 'Lectura de Numerología',
+    amount: 18000, // $18,000 COP (equivalente a ~4 EUR)
+    description: 'Acceso completo a lecturas numerológicas ilimitadas',
+  };
 
-  clientSecret: string | null = null;
+  // Variables para control de pagos (MercadoPago)
+  showPaymentModal: boolean = false;
   isProcessingPayment: boolean = false;
   paymentError: string | null = null;
   hasUserPaidForNumerology: boolean = false;
-  firstQuestionAsked: boolean = false;
-  //Modal de rueda de la fortuna
-  showFortuneWheel: boolean = false;
-  numerologyPrizes: Prize[] = [
-    {
-      id: '1',
-      name: '3 lanzamientos de la Rueda Numerológica',
-      color: '#4ecdc4',
-      icon: '🔢',
-    },
-    {
-      id: '2',
-      name: '1 Análisis Premium Numerológico',
-      color: '#45b7d1',
-      icon: '✨',
-    },
-    {
-      id: '4',
-      name: '¡Intenta de nuevo!',
-      color: '#ff7675',
-      icon: '🔄',
-    },
-  ];
-  private wheelTimer: any;
-  // NUEVA PROPIEDAD para controlar mensajes bloqueados
+
+  // ✅ Contador de mensajes del usuario para lógica del 2do mensaje
+  userMessageCount: number = 0;
+  private readonly MESSAGES_BEFORE_PAYMENT: number = 2;
+
+  // Propiedad para controlar mensajes bloqueados
   blockedMessageId: string | null = null;
 
   private backendUrl = environment.apiUrl;
@@ -154,11 +133,13 @@ export class LecturaNumerologiaComponent
     private http: HttpClient,
     private elRef: ElementRef<HTMLElement>,
     private cdr: ChangeDetectorRef,
-    private paypalService: PaypalService // ← AGREGAR ESTA LÍNEA
+    private mercadopagoService: MercadopagoService
   ) {}
+
   ngAfterViewInit(): void {
-    this.setVideosSpeed(0.67); // 0.5 = más lento, 1 = normal
+    this.setVideosSpeed(0.67);
   }
+
   private setVideosSpeed(rate: number): void {
     const host = this.elRef.nativeElement;
     const videos = host.querySelectorAll<HTMLVideoElement>('video');
@@ -168,130 +149,170 @@ export class LecturaNumerologiaComponent
       else v.addEventListener('loadedmetadata', apply, { once: true });
     });
   }
+
   async ngOnInit(): Promise<void> {
-    // ✅ Verificar pago SOLO de este servicio específico
+    console.log('🔢 ====== INICIANDO LECTURA DE NUMEROLOGÍA ======');
+
+    // ✅ PASO 1: Verificar si ya está pagado
     this.hasUserPaidForNumerology =
-      sessionStorage.getItem('hasUserPaidForNumerology_numerologie') === 'true';
+      sessionStorage.getItem('hasUserPaidForNumerology_numerologie') ===
+        'true' || this.mercadopagoService.isServicePaid('3');
 
-    const paymentStatus = this.paypalService.checkPaymentStatusFromUrl();
+    console.log('📊 Estado de pago inicial:', this.hasUserPaidForNumerology);
 
-    if (paymentStatus && paymentStatus.status === 'COMPLETED') {
-      try {
-        const verification = await this.paypalService.verifyAndProcessPayment(
-          paymentStatus.token
-        );
+    // ✅ PASO 2: Verificar si viene de MercadoPago
+    if (this.mercadopagoService.hasPaymentParams()) {
+      console.log('🔄 Detectados parámetros de pago en URL');
 
-        if (verification.valid && verification.status === 'approved') {
-          // ✅ Pago SOLO para este servicio (Numerologie)
-          this.hasUserPaidForNumerology = true;
-          sessionStorage.setItem(
-            'hasUserPaidForNumerology_numerologie',
-            'true'
-          );
+      const paymentStatus = this.mercadopagoService.checkPaymentStatusFromUrl();
 
-          // NO usar localStorage global
-          localStorage.removeItem('paypal_payment_completed');
+      if (paymentStatus.isPaid && paymentStatus.status === 'approved') {
+        console.log('✅ ¡PAGO APROBADO!');
+        console.log('  - Payment ID:', paymentStatus.paymentId);
+        console.log('  - Service ID:', paymentStatus.serviceId);
 
-          this.blockedMessageId = null;
-          sessionStorage.removeItem('numerologyBlockedMessageId');
+        // Guardar estado de pago
+        this.hasUserPaidForNumerology = true;
+        sessionStorage.setItem('hasUserPaidForNumerology_numerologie', 'true');
+        this.mercadopagoService.saveServicePaymentStatus('3', true);
 
-          // Limpiar URL
-          window.history.replaceState(
-            {},
-            document.title,
-            window.location.pathname
-          );
+        // Desbloquear mensajes
+        this.blockedMessageId = null;
+        sessionStorage.removeItem('numerologyBlockedMessageId');
 
-          // Cerrar modal de pago
-          this.showPaymentModal = false;
-          this.isProcessingPayment = false;
-          this.paymentError = null;
-          this.cdr.markForCheck();
+        // Recuperar datos guardados antes del pago
+        const savedData = this.mercadopagoService.getPaymentData();
+        if (savedData) {
+          console.log('📦 Recuperando datos guardados:', savedData);
 
-          // ✅ MENSAJE DE CONFIRMACIÓN
-          setTimeout(() => {
-            const successMessage: ConversationMessage = {
-              role: 'numerologist',
-              message:
-                '🎉 ¡Pago completado exitosamente!\n\n' +
-                '✨ Gracias por tu pago. Ahora tienes acceso completo a la lectura de Numerología.\n\n' +
-                '🔢 ¡Descubramos juntos los secretos de los números!\n\n' +
-                '📌 Nota: Este pago es válido solo para el servicio de Numerología. Para otros servicios se requiere un pago separado.',
-              timestamp: new Date(),
-            };
-            this.messages.push(successMessage);
-            this.saveMessagesToSession();
-            this.cdr.detectChanges();
-            setTimeout(() => this.scrollToBottom(), 200);
-          }, 1000);
-        } else {
-          this.paymentError = 'El pago no pudo ser verificado.';
+          // Recuperar mensajes del chat
+          if (
+            savedData.conversationHistory &&
+            savedData.conversationHistory.length > 0
+          ) {
+            this.messages = savedData.conversationHistory.map((msg: any) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp),
+            }));
+            this.hasStartedConversation = true;
+            console.log('💬 Mensajes recuperados:', this.messages.length);
+          }
 
-          setTimeout(() => {
-            const errorMessage: ConversationMessage = {
-              role: 'numerologist',
-              message:
-                '⚠️ Hubo un problema al verificar tu pago. Por favor, intenta de nuevo o contacta con nuestro soporte.',
-              timestamp: new Date(),
-            };
-            this.messages.push(errorMessage);
-            this.saveMessagesToSession();
-            this.cdr.detectChanges();
-          }, 800);
+          // Recuperar contador de mensajes
+          if (savedData.userMessageCount !== undefined) {
+            this.userMessageCount = savedData.userMessageCount;
+          }
+
+          // Recuperar datos de usuario
+          if (savedData.userData) {
+            this.userData = savedData.userData;
+            sessionStorage.setItem(
+              'userData',
+              JSON.stringify(savedData.userData)
+            );
+          }
         }
-      } catch (error) {
-        console.error('Error verificando pago de PayPal:', error);
-        this.paymentError = 'Error en la verificación del pago';
 
-        setTimeout(() => {
-          const errorMessage: ConversationMessage = {
-            role: 'numerologist',
-            message:
-              '❌ Lamentablemente, ocurrió un error al verificar tu pago. Por favor, intenta de nuevo más tarde.',
-            timestamp: new Date(),
-          };
-          this.messages.push(errorMessage);
-          this.saveMessagesToSession();
-          this.cdr.detectChanges();
-        }, 800);
+        // Limpiar datos de pago temporal
+        this.mercadopagoService.clearPaymentData();
+
+        // Limpiar parámetros de la URL
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
+
+        // Agregar mensaje de confirmación de pago
+        const successMessage: ConversationMessage = {
+          role: 'numerologist',
+          message: `✨ **¡Pago confirmado exitosamente!** ✨
+
+🔢 Ahora tienes acceso completo e ilimitado a mis servicios de numerología sagrada.
+
+Los números del universo se han alineado a tu favor. Puedes preguntarme lo que desees sobre tu camino de vida, números del destino, compatibilidades numéricas y todos los secretos que los números guardan para ti.
+
+¿Qué misterio numérico quieres descubrir?`,
+          timestamp: new Date(),
+        };
+        this.messages.push(successMessage);
+        this.saveMessagesToSession();
+
+        // Procesar mensaje pendiente si existe
+        const pendingMessage = sessionStorage.getItem(
+          'pendingNumerologyMessage'
+        );
+        if (pendingMessage) {
+          console.log('📨 Procesando mensaje pendiente:', pendingMessage);
+          sessionStorage.removeItem('pendingNumerologyMessage');
+          setTimeout(() => {
+            this.processNumerologyUserMessage(pendingMessage);
+          }, 2000);
+        }
+
+        this.cdr.markForCheck();
+        return;
+      } else if (paymentStatus.status === 'pending') {
+        console.log('⏳ Pago pendiente');
+        const pendingMessage: ConversationMessage = {
+          role: 'numerologist',
+          message:
+            '⏳ Tu pago está siendo procesado. Te notificaremos cuando se confirme.',
+          timestamp: new Date(),
+        };
+        this.messages.push(pendingMessage);
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
+      } else if (
+        paymentStatus.status === 'rejected' ||
+        paymentStatus.status === 'failure'
+      ) {
+        console.log('❌ Pago rechazado o fallido');
+        this.paymentError =
+          'El pago no se pudo completar. Por favor, intenta nuevamente.';
+        this.mercadopagoService.cleanPaymentParamsFromUrl();
       }
     }
 
-    // ✅ MEJORADO: Cargar datos del usuario desde sessionStorage
-
-    // ✅ MOSTRAR TODO EL CONTENIDO DE sessionStorage
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      if (key) {
-        const value = sessionStorage.getItem(key);
-      }
-    }
-
+    // ✅ PASO 3: Cargar datos del usuario desde sessionStorage
     const savedUserData = sessionStorage.getItem('userData');
-
     if (savedUserData) {
       try {
         this.userData = JSON.parse(savedUserData);
-        const requiredFields = ['email'];
-        const availableFields = requiredFields.filter(
-          (field) => this.userData[field]
-        );
-        const missingFields = requiredFields.filter(
-          (field) => !this.userData[field]
-        );
-
-        if (missingFields.length > 0) {
-        }
       } catch (error) {
         this.userData = null;
       }
-    } else {
-      this.userData = null;
     }
 
+    // ✅ PASO 4: Cargar mensajes guardados
+    if (this.messages.length === 0) {
+      this.loadNumerologyData();
+    }
+
+    // ✅ PASO 5: Si ya pagó, desbloquear todo
+    if (this.hasUserPaidForNumerology && this.blockedMessageId) {
+      console.log('🔓 Desbloqueando mensajes (usuario ya pagó)');
+      this.blockedMessageId = null;
+      sessionStorage.removeItem('numerologyBlockedMessageId');
+    }
+
+    // Probar conexión
+    this.numerologyService.testConnection().subscribe({
+      next: (response) => {
+        console.log('✅ Conexión con servicio de numerología OK');
+      },
+      error: (error) => {
+        console.error('❌ Error de conexión:', error);
+      },
+    });
+
+    console.log('🔢 ====== INICIALIZACIÓN COMPLETADA ======');
+    console.log('  - Usuario pagó:', this.hasUserPaidForNumerology);
+    console.log('  - Mensajes:', this.messages.length);
+    console.log('  - Contador mensajes usuario:', this.userMessageCount);
+
+    this.cdr.markForCheck();
+  }
+
+  private loadNumerologyData(): void {
     const savedMessages = sessionStorage.getItem('numerologyMessages');
-    const savedFirstQuestion = sessionStorage.getItem(
-      'numerologyFirstQuestionAsked'
+    const savedMessageCount = sessionStorage.getItem(
+      'numerologyUserMessageCount'
     );
     const savedBlockedMessageId = sessionStorage.getItem(
       'numerologyBlockedMessageId'
@@ -304,125 +325,38 @@ export class LecturaNumerologiaComponent
           ...msg,
           timestamp: new Date(msg.timestamp),
         }));
-        this.firstQuestionAsked = savedFirstQuestion === 'true';
+        this.userMessageCount = parseInt(savedMessageCount || '0');
         this.blockedMessageId = savedBlockedMessageId || null;
         this.hasStartedConversation = true;
+        this.lastMessageCount = this.messages.length;
+        console.log('💬 Mensajes cargados de sesión:', this.messages.length);
       } catch (error) {
+        console.error('Error parseando mensajes:', error);
         this.clearSessionData();
-        this.startConversation();
+        this.initializeWelcomeMessage();
       }
     } else {
-      this.startConversation();
-    }
-
-    // Probar conexión
-    this.numerologyService.testConnection().subscribe({
-      next: (response) => {},
-      error: (error) => {},
-    });
-
-    if (this.hasStartedConversation && FortuneWheelComponent.canShowWheel()) {
-      this.showWheelAfterDelay(2000);
+      this.initializeWelcomeMessage();
     }
   }
 
-  onWheelClosed(): void {
-    this.showFortuneWheel = false;
-  }
-  triggerFortuneWheel(): void {
-    if (this.showPaymentModal || this.showDataModal) {
-      return;
-    }
+  private initializeWelcomeMessage(): void {
+    this.userMessageCount = 0;
+    sessionStorage.setItem('numerologyUserMessageCount', '0');
 
-    if (FortuneWheelComponent.canShowWheel()) {
-      this.showFortuneWheel = true;
-      this.cdr.markForCheck();
-    } else {
-      alert(
-        'No tienes lanzamientos disponibles. ' +
-          FortuneWheelComponent.getSpinStatus()
-      );
-    }
-  }
-  getSpinStatus(): string {
-    return FortuneWheelComponent.getSpinStatus();
-  }
-  private processNumerologyPrize(prize: Prize): void {
-    switch (prize.id) {
-      case '1': // 3 Lecturas Gratis
-        this.addFreeNumerologyConsultations(3);
-        break;
-      case '2': // 1 Análisis Premium - ACCESO COMPLETO
-        this.hasUserPaidForNumerology = true;
-        sessionStorage.setItem('hasUserPaidForNumerology', 'true');
+    const randomWelcome =
+      this.welcomeMessages[
+        Math.floor(Math.random() * this.welcomeMessages.length)
+      ];
 
-        // Desbloquear cualquier mensaje bloqueado
-        if (this.blockedMessageId) {
-          this.blockedMessageId = null;
-          sessionStorage.removeItem('numerologyBlockedMessageId');
-        }
+    const welcomeMessage: ConversationMessage = {
+      role: 'numerologist',
+      message: randomWelcome,
+      timestamp: new Date(),
+    };
 
-        // Agregar mensaje especial para este premio
-        const premiumMessage: ConversationMessage = {
-          role: 'numerologist',
-          message:
-            '✨ **¡Has desbloqueado el acceso Premium completo!** ✨\n\nLos números sagrados se han alineado de manera extraordinaria para ayudarte. Ahora tienes acceso ilimitado a todo el conocimiento numerológico. Puedes consultar sobre tu camino de vida, números del destino, compatibilidades numéricas y todos los secretos de la numerología tantas veces como desees.\n\n🔢 *El universo numérico ha revelado todos sus secretos para ti* 🔢',
-          timestamp: new Date(),
-        };
-        this.messages.push(premiumMessage);
-        this.shouldAutoScroll = true;
-        this.saveMessagesToSession();
-        break;
-      // ✅ ELIMINADO: case '3' - 2 Consultas Extra
-      case '4': // Otra oportunidad
-        break;
-      default:
-    }
-  }
-  private addFreeNumerologyConsultations(count: number): void {
-    const current = parseInt(
-      sessionStorage.getItem('freeNumerologyConsultations') || '0'
-    );
-    const newTotal = current + count;
-    sessionStorage.setItem('freeNumerologyConsultations', newTotal.toString());
-
-    // Si había un mensaje bloqueado, desbloquearlo
-    if (this.blockedMessageId && !this.hasUserPaidForNumerology) {
-      this.blockedMessageId = null;
-      sessionStorage.removeItem('numerologyBlockedMessageId');
-    }
-  }
-
-  private hasFreeNumerologyConsultationsAvailable(): boolean {
-    const freeConsultations = parseInt(
-      sessionStorage.getItem('freeNumerologyConsultations') || '0'
-    );
-    return freeConsultations > 0;
-  }
-
-  private useFreeNumerologyConsultation(): void {
-    const freeConsultations = parseInt(
-      sessionStorage.getItem('freeNumerologyConsultations') || '0'
-    );
-
-    if (freeConsultations > 0) {
-      const remaining = freeConsultations - 1;
-      sessionStorage.setItem(
-        'freeNumerologyConsultations',
-        remaining.toString()
-      );
-
-      // Mostrar mensaje informativo
-      const prizeMsg: ConversationMessage = {
-        role: 'numerologist',
-        message: `✨ *Has utilizado una consulta numerológica gratuita* ✨\n\nTe quedan **${remaining}** consultas numerológicas gratuitas.`,
-        timestamp: new Date(),
-      };
-
-      this.messages.push(prizeMsg);
-      this.shouldAutoScroll = true;
-      this.saveMessagesToSession();
-    }
+    this.messages.push(welcomeMessage);
+    this.hasStartedConversation = true;
   }
 
   ngAfterViewChecked(): void {
@@ -442,9 +376,7 @@ export class LecturaNumerologiaComponent
   }
 
   ngOnDestroy(): void {
-    if (this.wheelTimer) {
-      clearTimeout(this.wheelTimer);
-    }
+    // Cleanup si es necesario
   }
 
   autoResize(event: any): void {
@@ -452,63 +384,69 @@ export class LecturaNumerologiaComponent
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   }
+
   startConversation(): void {
     if (this.messages.length === 0) {
-      const randomWelcome =
-        this.welcomeMessages[
-          Math.floor(Math.random() * this.welcomeMessages.length)
-        ];
-
-      const welcomeMessage: ConversationMessage = {
-        role: 'numerologist',
-        message: randomWelcome,
-        timestamp: new Date(),
-      };
-
-      this.messages.push(welcomeMessage);
+      this.initializeWelcomeMessage();
     }
     this.hasStartedConversation = true;
-
-    if (FortuneWheelComponent.canShowWheel()) {
-      this.showWheelAfterDelay(3000);
-    } else {
-    }
   }
+
+  // ========== MÉTODOS DE ENVÍO DE MENSAJES ==========
 
   sendMessage(): void {
     if (!this.currentMessage.trim() || this.isLoading) return;
 
     const userMessage = this.currentMessage.trim();
 
-    // ✅ NUEVA LÓGICA: Verificar consultas numerológicas gratuitas ANTES de verificar pago
-    if (!this.hasUserPaidForNumerology && this.firstQuestionAsked) {
-      // Verificar si tiene consultas numerológicas gratis disponibles
-      if (this.hasFreeNumerologyConsultationsAvailable()) {
-        this.useFreeNumerologyConsultation();
-        // Continuar con el mensaje sin bloquear
-      } else {
-        // Si no tiene consultas gratis, mostrar modal de datos
+    console.log('📤 Enviando mensaje...');
+    console.log('  - Usuario pagó:', this.hasUserPaidForNumerology);
+    console.log('  - Contador mensajes:', this.userMessageCount);
 
-        // Cerrar otros modales primero
-        this.showFortuneWheel = false;
-        this.showPaymentModal = false;
-
-        // Guardar el mensaje para procesarlo después del pago
-        sessionStorage.setItem('pendingNumerologyMessage', userMessage);
-
-        this.saveStateBeforePayment();
-
-        // Mostrar modal de datos con timeout
-        setTimeout(() => {
-          this.showDataModal = true;
-          this.cdr.markForCheck();
-        }, 100);
-
-        return; // Salir aquí para no procesar el mensaje aún
-      }
+    // ✅ Si ya pagó, procesar mensaje directamente
+    if (this.hasUserPaidForNumerology) {
+      console.log('✅ Usuario tiene acceso completo, procesando mensaje...');
+      this.shouldAutoScroll = true;
+      this.processNumerologyUserMessage(userMessage);
+      return;
     }
 
+    // ✅ Verificar si es el 2do mensaje o posterior (requiere pago)
+    if (this.userMessageCount >= this.MESSAGES_BEFORE_PAYMENT - 1) {
+      console.log(`🔒 Mensaje #${this.userMessageCount + 1} - Requiere pago`);
+
+      // Cerrar otros modales
+      this.showPaymentModal = false;
+
+      // Guardar mensaje pendiente
+      sessionStorage.setItem('pendingNumerologyMessage', userMessage);
+
+      // Guardar estado antes del pago
+      this.saveStateBeforePayment();
+
+      // Mostrar modal de datos
+      setTimeout(() => {
+        this.showDataModal = true;
+        this.cdr.markForCheck();
+      }, 100);
+
+      return;
+    }
+
+    // Procesar mensaje normalmente (primer mensaje gratuito)
     this.shouldAutoScroll = true;
+    this.processNumerologyUserMessage(userMessage);
+  }
+
+  private processNumerologyUserMessage(userMessage: string): void {
+    // Incrementar contador de mensajes del usuario
+    this.userMessageCount++;
+    sessionStorage.setItem(
+      'numerologyUserMessageCount',
+      this.userMessageCount.toString()
+    );
+
+    console.log(`📨 Mensaje del usuario #${this.userMessageCount}`);
 
     // Agregar mensaje del usuario
     const userMsg: ConversationMessage = {
@@ -541,6 +479,7 @@ export class LecturaNumerologiaComponent
         next: (response) => {
           this.isLoading = false;
           this.isTyping = false;
+          this.shouldAutoScroll = true;
 
           if (response) {
             const messageId = Date.now().toString();
@@ -553,33 +492,24 @@ export class LecturaNumerologiaComponent
             };
             this.messages.push(numerologistMsg);
 
-            this.shouldAutoScroll = true;
-
-            // ✅ LÓGICA MODIFICADA: Solo bloquear si no tiene consultas gratis Y no ha pagado
+            // ✅ Verificar si debe bloquear después del 2do mensaje
             if (
-              this.firstQuestionAsked &&
               !this.hasUserPaidForNumerology &&
-              !this.hasFreeNumerologyConsultationsAvailable()
+              this.userMessageCount >= this.MESSAGES_BEFORE_PAYMENT
             ) {
               this.blockedMessageId = messageId;
               sessionStorage.setItem('numerologyBlockedMessageId', messageId);
 
+              // Mostrar modal de pago después de 2 segundos
               setTimeout(() => {
                 this.saveStateBeforePayment();
-
-                // Cerrar otros modales
-                this.showFortuneWheel = false;
                 this.showPaymentModal = false;
 
-                // Mostrar modal de datos
                 setTimeout(() => {
                   this.showDataModal = true;
                   this.cdr.markForCheck();
                 }, 100);
               }, 2000);
-            } else if (!this.firstQuestionAsked) {
-              this.firstQuestionAsked = true;
-              sessionStorage.setItem('numerologyFirstQuestionAsked', 'true');
             }
 
             this.saveMessagesToSession();
@@ -589,25 +519,51 @@ export class LecturaNumerologiaComponent
           }
         },
         error: (error: any) => {
+          console.error('Error en chat:', error);
           this.isLoading = false;
           this.isTyping = false;
-          this.handleError('Verbindungsfehler. Bitte versuche es erneut.');
+          this.handleError('Error de conexión. Por favor, inténtalo de nuevo.');
           this.cdr.markForCheck();
         },
       });
   }
+
+  // ========== MÉTODOS DE GUARDADO Y SESIÓN ==========
+
   private saveStateBeforePayment(): void {
+    console.log('💾 Guardando estado antes del pago...');
+
     this.saveMessagesToSession();
+
     sessionStorage.setItem(
-      'numerologyFirstQuestionAsked',
-      this.firstQuestionAsked.toString()
+      'numerologyUserMessageCount',
+      this.userMessageCount.toString()
     );
+
     if (this.blockedMessageId) {
       sessionStorage.setItem(
         'numerologyBlockedMessageId',
         this.blockedMessageId
       );
     }
+
+    // Guardar datos para MercadoPago
+    const paymentData = {
+      conversationHistory: this.messages.map((msg) => ({
+        ...msg,
+        timestamp:
+          msg.timestamp instanceof Date
+            ? msg.timestamp.toISOString()
+            : msg.timestamp,
+      })),
+      userMessageCount: this.userMessageCount,
+      userData: this.userData,
+      blockedMessageId: this.blockedMessageId,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.mercadopagoService.savePaymentData(paymentData);
+    console.log('✅ Estado guardado para recuperar después del pago');
   }
 
   private saveMessagesToSession(): void {
@@ -623,16 +579,15 @@ export class LecturaNumerologiaComponent
         'numerologyMessages',
         JSON.stringify(messagesToSave)
       );
-    } catch (error) {}
+    } catch (error) {
+      console.error('Error guardando mensajes:', error);
+    }
   }
 
   private clearSessionData(): void {
-    sessionStorage.removeItem('hasUserPaidForNumerology');
     sessionStorage.removeItem('numerologyMessages');
-    sessionStorage.removeItem('numerologyFirstQuestionAsked');
+    sessionStorage.removeItem('numerologyUserMessageCount');
     sessionStorage.removeItem('numerologyBlockedMessageId');
-    // ✅ NO ELIMINAR userData para mantener los datos entre sesiones
-    // sessionStorage.removeItem('userData'); // Comentado para mantener los datos
   }
 
   isMessageBlocked(message: ConversationMessage): boolean {
@@ -641,79 +596,33 @@ export class LecturaNumerologiaComponent
     );
   }
 
-  async promptForPayment(): Promise<void> {
-    this.showPaymentModal = true;
+  // ========== MÉTODOS DE PAGO (MERCADOPAGO) ==========
+
+  onUserDataSubmitted(userData: any): void {
+    console.log('📋 Datos del usuario recibidos:', userData);
+
+    // Guardar datos
+    this.userData = userData;
+    sessionStorage.setItem('userData', JSON.stringify(userData));
+
+    // El modal ya maneja la redirección a MercadoPago
+    this.showDataModal = false;
     this.cdr.markForCheck();
-    this.paymentError = null;
-    this.isProcessingPayment = false;
-
-    // Validar datos de usuario
-    if (!this.userData) {
-      const savedUserData = sessionStorage.getItem('userData');
-      if (savedUserData) {
-        try {
-          this.userData = JSON.parse(savedUserData);
-        } catch (error) {
-          this.userData = null;
-        }
-      }
-    }
-
-    if (!this.userData) {
-      this.paymentError =
-        'No se encontraron datos del cliente. Por favor, complete el formulario primero.';
-      this.showDataModal = true;
-      this.cdr.markForCheck();
-      return;
-    }
-
-    const email = this.userData.email?.toString().trim();
-    if (!email) {
-      this.paymentError =
-        'Correo electrónico requerido. Por favor, complete el formulario.';
-      this.showDataModal = true;
-      this.cdr.markForCheck();
-      return;
-    }
-
-    // ✅ Guardar mensaje pendiente si existe
-    if (this.currentMessage?.trim()) {
-      sessionStorage.setItem(
-        'pendingNumerologyMessage',
-        this.currentMessage.trim()
-      );
-    }
   }
 
-  // ✅ MÉTODO MIGRADO A PAYPAL
-  async handlePaymentSubmit(): Promise<void> {
-    this.isProcessingPayment = true;
-    this.paymentError = null;
+  onDataModalClosed(): void {
+    this.showDataModal = false;
     this.cdr.markForCheck();
-
-    try {
-      await this.paypalService.initiatePayment({
-        amount: '4.00',
-        currency: 'EUR',
-        serviceName: 'Lectura de Numerología',
-        returnPath: '/lectura-numerologia',
-        cancelPath: '/lectura-numerologia',
-      });
-    } catch (error: any) {
-      this.paymentError =
-        error.message || 'Error al inicializar el pago con PayPal.';
-      this.isProcessingPayment = false;
-      this.cdr.markForCheck();
-    }
   }
 
-  // ✅ MÉTODO SIMPLIFICADO - PayPal no requiere cleanup
   cancelPayment(): void {
     this.showPaymentModal = false;
     this.isProcessingPayment = false;
     this.paymentError = null;
     this.cdr.markForCheck();
   }
+
+  // ========== MÉTODOS DE FORMULARIO Y UI ==========
 
   savePersonalData(): void {
     if (this.fullName) {
@@ -733,7 +642,7 @@ export class LecturaNumerologiaComponent
       let numbersMessage = 'He calculado tus números sagrados:\n\n';
 
       if (this.personalNumbers.lifePath) {
-        numbersMessage += `🔹 Lebensweg: ${
+        numbersMessage += `🔹 Camino de Vida: ${
           this.personalNumbers.lifePath
         } - ${this.numerologyService.getNumberMeaning(
           this.personalNumbers.lifePath
@@ -741,7 +650,7 @@ export class LecturaNumerologiaComponent
       }
 
       if (this.personalNumbers.destiny) {
-        numbersMessage += `🔹 Schicksalszahl: ${
+        numbersMessage += `🔹 Número del Destino: ${
           this.personalNumbers.destiny
         } - ${this.numerologyService.getNumberMeaning(
           this.personalNumbers.destiny
@@ -769,14 +678,14 @@ export class LecturaNumerologiaComponent
     this.lastMessageCount = 0;
 
     if (!this.hasUserPaidForNumerology) {
-      this.firstQuestionAsked = false;
+      this.userMessageCount = 0;
       this.blockedMessageId = null;
       this.clearSessionData();
     } else {
       sessionStorage.removeItem('numerologyMessages');
-      sessionStorage.removeItem('numerologyFirstQuestionAsked');
+      sessionStorage.removeItem('numerologyUserMessageCount');
       sessionStorage.removeItem('numerologyBlockedMessageId');
-      this.firstQuestionAsked = false;
+      this.userMessageCount = 0;
       this.blockedMessageId = null;
     }
 
@@ -822,7 +731,7 @@ export class LecturaNumerologiaComponent
       if (isNaN(date.getTime())) {
         return 'N/A';
       }
-      return date.toLocaleTimeString('de-DE', {
+      return date.toLocaleTimeString('es-CO', {
         hour: '2-digit',
         minute: '2-digit',
       });
@@ -842,10 +751,10 @@ export class LecturaNumerologiaComponent
       '<strong>$1</strong>'
     );
 
-    // Convertir saltos de línea a <br> para mejor visualización
+    // Convertir saltos de línea a <br>
     formattedContent = formattedContent.replace(/\n/g, '<br>');
 
-    // Opcional: También puedes manejar *texto* (una sola asterisco) como cursiva
+    // Manejar *texto* como cursiva
     formattedContent = formattedContent.replace(
       /(?<!\*)\*([^*\n]+)\*(?!\*)/g,
       '<em>$1</em>'
@@ -858,92 +767,5 @@ export class LecturaNumerologiaComponent
     if (this.dialogRef) {
       this.dialogRef.close();
     }
-  }
-  onUserDataSubmitted(userData: any): void {
-    // ✅ VALIDAR CAMPOS CRÍTICOS ANTES DE PROCEDER
-    const requiredFields = ['email']; // ❌ QUITADO 'apellido'
-    const missingFields = requiredFields.filter(
-      (field) => !userData[field] || userData[field].toString().trim() === ''
-    );
-
-    if (missingFields.length > 0) {
-      alert(
-        `Para continuar con el pago, debes completar lo siguiente: ${missingFields.join(
-          ', '
-        )}`
-      );
-      this.showDataModal = true; // Mantener modal abierto
-      this.cdr.markForCheck();
-      return;
-    }
-
-    // ✅ LIMPIAR Y GUARDAR datos INMEDIATAMENTE en memoria Y sessionStorage
-    this.userData = {
-      ...userData,
-      email: userData.email?.toString().trim(),
-    };
-
-    // ✅ GUARDAR EN sessionStorage INMEDIATAMENTE
-    try {
-      sessionStorage.setItem('userData', JSON.stringify(this.userData));
-
-      // Verificar que se guardaron correctamente
-      const verificacion = sessionStorage.getItem('userData');
-    } catch (error) {}
-
-    this.showDataModal = false;
-    this.cdr.markForCheck();
-
-    // ✅ NUEVO: Enviar datos al backend como en el componente de sueños
-    this.sendUserDataToBackend(userData);
-  }
-
-  // ✅ NUEVO: Agregar método para enviar al backend (como en el componente de sueños)
-  private sendUserDataToBackend(userData: any): void {
-    this.http.post(`${this.backendUrl}api/recolecta`, userData).subscribe({
-      next: (response) => {
-        // ✅ LLAMAR A promptForPayment QUE INICIALIZA STRIPE
-        this.promptForPayment();
-      },
-      error: (error) => {
-        // ✅ AUN ASÍ ABRIR EL MODAL DE PAGO
-        this.promptForPayment();
-      },
-    });
-  }
-
-  onDataModalClosed(): void {
-    this.showDataModal = false;
-    this.cdr.markForCheck();
-  }
-  onPrizeWon(prize: Prize): void {
-    const prizeMessage: ConversationMessage = {
-      role: 'numerologist',
-      message: `🔢 ¡Los números sagrados te han bendecido! Has ganado: **${prize.name}** ${prize.icon}\n\nLas vibraciones numéricas del universo han decidido favorecerte con este regalo cósmico. La energía de los números antiguos fluye a través de ti, revelando secretos más profundos de tu destino numerológico. ¡Que la sabiduría de los números te guíe!`,
-      timestamp: new Date(),
-    };
-
-    this.messages.push(prizeMessage);
-    this.shouldAutoScroll = true;
-    this.saveMessagesToSession();
-
-    this.processNumerologyPrize(prize);
-  }
-
-  showWheelAfterDelay(delayMs: number = 3000): void {
-    if (this.wheelTimer) {
-      clearTimeout(this.wheelTimer);
-    }
-
-    this.wheelTimer = setTimeout(() => {
-      if (
-        FortuneWheelComponent.canShowWheel() &&
-        !this.showPaymentModal &&
-        !this.showDataModal
-      ) {
-        this.showFortuneWheel = true;
-        this.cdr.markForCheck();
-      }
-    }, delayMs);
   }
 }

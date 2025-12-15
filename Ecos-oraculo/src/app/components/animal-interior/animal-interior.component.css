@@ -17,7 +17,8 @@
   --animal-border: rgba(139, 69, 19, 0.3);
   --animal-glow: rgba(34, 139, 34, 0.3);
 }
-html, body {
+html,
+body {
   overflow: hidden;
   height: 100%;
   width: 100%;
@@ -2033,5 +2034,163 @@ html, body {
   .input-area {
     max-width: 100%;
     overflow-x: hidden;
+  }
+}
+/* ========== ESTILOS MERCADOPAGO ========== */
+
+.payment-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 20px 0;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+}
+
+.feature-icon {
+  font-size: 1.3rem;
+}
+
+.payment-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 25px;
+  gap: 12px;
+}
+
+.payment-loading p {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  margin: 0;
+}
+
+.loading-subtitle {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+.mercadopago-spinner {
+  width: 45px;
+  height: 45px;
+  border: 4px solid rgba(0, 158, 227, 0.2);
+  border-top-color: #009ee3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.payment-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.cancel-button {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cancel-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.mercadopago-button {
+  flex: 2;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #009ee3 0%, #00b1ea 50%, #009ee3 100%);
+  background-size: 200% 100%;
+  color: white;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.mercadopago-button:hover:not(:disabled) {
+  background-position: 100% 0;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 158, 227, 0.4);
+}
+
+.mercadopago-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  font-size: 1.3rem;
+}
+
+.payment-error {
+  background: rgba(255, 68, 68, 0.15);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  padding: 12px 15px;
+  border-radius: 10px;
+  color: #ff6b6b;
+  text-align: center;
+  font-size: 0.9rem;
+  margin: 15px 0;
+}
+
+.security-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lock-icon {
+  font-size: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .payment-actions {
+    flex-direction: column-reverse;
+  }
+
+  .cancel-button,
+  .mercadopago-button {
+    flex: none;
+    width: 100%;
+  }
+
+  .mercadopago-button {
+    padding: 16px;
   }
 }

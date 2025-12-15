@@ -12,13 +12,12 @@
         dataLayer.push(arguments);
       }
       gtag("js", new Date());
-
       gtag("config", "G-HW2QWG5Z9M");
     </script>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Significado de Sueños</title>
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
@@ -36,15 +35,16 @@
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
-    <noscript
-      ><iframe
+    <noscript>
+      <iframe
         src="https://www.googletagmanager.com/ns.html?id=GTM-WXHHTDK2"
         height="0"
         width="0"
         style="display: none; visibility: hidden"
-      ></iframe
-    ></noscript>
+      ></iframe>
+    </noscript>
     <!-- End Google Tag Manager (noscript) -->
+
     <div class="oracle-container">
       <!-- Video de fondo -->
       <video autoplay muted loop playsinline class="background-video">
@@ -71,7 +71,7 @@
               <div class="name-title-row">
                 <h3>{{ interpreterData.name }}</h3>
                 <span class="separator-icon">»</span>
-                <p class="interpreter-title">Guardián de los Sueños</p>
+                <p class="interpreter-title">Guardiana de los Sueños</p>
               </div>
               <!-- Segunda línea: especialidad debajo EN MAYÚSCULAS -->
               <p class="interpreter-specialty">
@@ -135,7 +135,7 @@
                       <p [innerHTML]="formatMessage(message.message)"></p>
                     </div>
 
-                    <!-- OVERLAY DE PAGO (solo aparece si está bloqueado) -->
+                    <!-- ✅ OVERLAY DE PAGO ACTUALIZADO (MERCADOPAGO) -->
                     <div
                       *ngIf="isMessageBlocked(message)"
                       class="message-payment-overlay"
@@ -144,14 +144,15 @@
                         <span class="lock-icon">🔒</span>
                         <p><strong>Contenido Premium</strong></p>
                         <p>
-                          Paga 4.00€ para ver esta interpretación y acceder a
-                          interpretaciones ilimitadas
+                          Paga $18,000 COP para ver esta interpretación y
+                          acceder a interpretaciones ilimitadas
                         </p>
+                        <!-- ✅ CAMBIADO: Ahora abre el modal de datos directamente -->
                         <button
-                          (click)="promptForPayment()"
+                          (click)="showDataModal = true"
                           class="unlock-button"
                         >
-                          💳 Desbloquear por 4.00€
+                          💳 Desbloquear por $18,000 COP
                         </button>
                       </div>
                     </div>
@@ -163,7 +164,7 @@
                 </div>
               </div>
 
-              <!-- Indicador de escritura (SIN CAMBIOS) -->
+              <!-- Indicador de escritura -->
               <div
                 *ngIf="isTyping"
                 class="message interpreter-message typing-indicator"
@@ -174,7 +175,8 @@
                       class="interpreter-avatar-small"
                       src="/Maestra1.webp"
                       alt="Maestra Avatar"
-                  /></span>
+                    />
+                  </span>
                 </div>
                 <div class="message-content">
                   <div class="message-bubble typing">
@@ -184,13 +186,15 @@
                       <span></span>
                     </div>
                     <p class="typing-text">
-                      Maestra alma está interpretando las energías...
+                      Maestra Alma está interpretando las energías...
                     </p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- Área de entrada -->
           <div class="input-area">
             <div class="input-container">
               <div class="text-input-wrapper">
@@ -236,73 +240,22 @@
           </div>
         </div>
       </div>
+
+      <!-- ✅ MODAL DE RECOLECCIÓN DE DATOS CON MERCADOPAGO -->
       <app-recolecta-datos
         *ngIf="showDataModal"
+        [serviceConfig]="dreamServiceConfig"
+        [processPayment]="true"
         (onDataSubmitted)="onUserDataSubmitted($event)"
         (onModalClosed)="onDataModalClosed()"
       >
       </app-recolecta-datos>
 
-      <div *ngIf="showPaymentModal" class="payment-modal-overlay">
-        <div class="payment-modal">
-          <div class="payment-header">
-            <h3>🔮 Desbloquea Interpretaciones Ilimitadas</h3>
-            <button (click)="cancelPayment()" class="close-payment-button">
-              ✕
-            </button>
-          </div>
+      <!-- ✅ ELIMINADO: Modal de pago antiguo de PayPal/Stripe -->
+      <!-- Ya no se necesita porque el pago se maneja en app-recolecta-datos -->
 
-          <div class="payment-content">
-            <div class="payment-info">
-              <p>Primera consulta gratis completada.</p>
-              <p>Para continuar interpretando sueños ilimitadamente:</p>
-            </div>
-
-            <div class="payment-price">
-              <span class="price-amount">4.00€</span>
-              <span class="price-description"
-                >Acceso completo a interpretaciones</span
-              >
-            </div>
-
-            <div *ngIf="isProcessingPayment" class="payment-loading">
-              <div class="loading-spinner"></div>
-              <p>Preparando sistema de pago...</p>
-            </div>
-
-            <!-- ✅ CAMBIO CRÍTICO: Usar [hidden] en lugar de *ngIf -->
-            <div
-              id="payment-element-container"
-              class="payment-element-container"
-              [hidden]="isProcessingPayment"
-            >
-              <!-- Stripe Payment Element se monta aquí -->
-            </div>
-
-            <div *ngIf="paymentError" class="payment-error">
-              <span>{{ paymentError }}</span>
-            </div>
-
-            <div class="payment-actions">
-              <button
-                (click)="handlePaymentSubmit()"
-                [disabled]="isProcessingPayment"
-                class="pay-button"
-              >
-                <span *ngIf="!isProcessingPayment">💳 Pagar y Continuar</span>
-                <span *ngIf="isProcessingPayment">Procesando...</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <app-fortune-wheel
-        [isVisible]="showFortuneWheel"
-        [prizes]="wheelPrizes"
-        (onPrizeWon)="onPrizeWon($event)"
-        (onWheelClosed)="onWheelClosed()"
-      >
-      </app-fortune-wheel>
+      <!-- ✅ ELIMINADO: Ruleta de la fortuna -->
+      <!-- <app-fortune-wheel> ya no se usa -->
     </div>
   </body>
 </html>

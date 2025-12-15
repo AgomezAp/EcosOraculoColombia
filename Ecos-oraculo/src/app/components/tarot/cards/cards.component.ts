@@ -18,7 +18,6 @@ import { CardService } from '../../../services/tarot/card.service';
 import { ParticlesComponent } from '../../../shared/particles/particles.component';
 import { RecolectaDatosComponent } from '../../recolecta-datos/recolecta-datos.component';
 import { environment } from '../../../environments/environmets.prod';
-import { PaypalService } from '../../../services/paypal.service';
 
 gsap.registerPlugin(Draggable, MotionPathPlugin, TextPlugin);
 interface Card {
@@ -53,47 +52,15 @@ export class CardsComponent implements OnInit, AfterViewInit, OnDestroy {
   private cardElements: HTMLElement[] = [];
   private timeline: gsap.core.Timeline | null = null;
 
-  // Datos para enviar
-
-  // Payment Modal Properties
-  showPaymentModal: boolean = false;
-  isProcessingPayment: boolean = false;
-  paymentError: string | null = null;
-  private backendUrl = environment.apiUrl;
-
   constructor(
     private cardService: CardService,
     private router: Router,
     private route: ActivatedRoute,
     private http: HttpClient,
-    private cdr: ChangeDetectorRef,
-    private paypalService: PaypalService
+    private cdr: ChangeDetectorRef
   ) {}
 
   async ngOnInit(): Promise<void> {
-
-    // ✅ VERIFICAR PAGO DE PAYPAL DESDE URL
-    const paymentStatus = this.paypalService.checkPaymentStatusFromUrl();
-
-    if (paymentStatus && paymentStatus.status === 'COMPLETED') {
-      try {
-        const verification = await this.paypalService.verifyAndProcessPayment(
-          paymentStatus.token
-        );
-
-        if (verification.valid && verification.status === 'approved') {
-          localStorage.removeItem('paypal_payment_completed');
-
-          // Navegar a la descripción de las cartas
-          this.router.navigate(['/descripcion-cartas']);
-          return;
-        }
-      } catch (error) {
-        console.error('Error verificando pago de PayPal:', error);
-        this.paymentError = 'Error al verificar el pago';
-      }
-    }
-
     // ✅ CARGAR DATOS DEL USUARIO DESDE sessionStorage
     const savedUserData = sessionStorage.getItem('userData');
     if (savedUserData) {
@@ -585,35 +552,6 @@ export class CardsComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  // ========== MÉTODOS DE PAGO ==========
-
-  async handlePaymentSubmit(): Promise<void> {
-    this.isProcessingPayment = true;
-    this.paymentError = null;
-    this.cdr.markForCheck();
-
-    try {
-      await this.paypalService.initiatePayment({
-        amount: '4.00',
-        currency: 'EUR',
-        serviceName: 'Lectura de Tarot',
-        returnPath: '/seleccionar-cartas',
-        cancelPath: '/seleccionar-cartas',
-      });
-    } catch (error: any) {
-      this.paymentError =
-        error.message || 'Error al inicializar el pago de PayPal.';
-      this.isProcessingPayment = false;
-      this.cdr.markForCheck();
-    }
-  }
-  cancelPayment(): void {
-    this.showPaymentModal = false;
-    this.isProcessingPayment = false;
-    this.paymentError = null;
-    this.cdr.markForCheck();
-  }
-
   private fadeOutAndNavigate(): void {
     const cardContainer = document.getElementById('cardContainer');
     const paymentModalOverlay = document.querySelector(
@@ -673,23 +611,16 @@ export class CardsComponent implements OnInit, AfterViewInit, OnDestroy {
     this.showDataModal = false;
 
     // ✅ ENVIAR AL BACKEND (opcional)
-    this.http.post(`${this.backendUrl}api/recolecta`, userData).subscribe({
+    this.http.post(`${environment.apiUrl}api/recolecta`, userData).subscribe({
       next: (response) =>
         console.log('✅ Datos enviados al backend:', response),
       error: (error) => console.error('⚠️ Error enviando datos:', error),
     });
 
-    // ✅ ABRIR MODAL DE PAGO
+    // ✅ NAVEGAR A LA DESCRIPCIÓN DE LAS CARTAS
     setTimeout(() => {
-      this.promptForPayment();
+      this.fadeOutAndNavigate();
     }, 500);
-  }
-
-  async promptForPayment(): Promise<void> {
-    this.showPaymentModal = true;
-    this.paymentError = null;
-    this.isProcessingPayment = false;
-    this.cdr.markForCheck();
   }
 
   onDataModalClosed(): void {
