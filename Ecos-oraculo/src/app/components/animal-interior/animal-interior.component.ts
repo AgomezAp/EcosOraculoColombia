@@ -129,7 +129,7 @@ export class AnimalInteriorComponent
 
   // ✅ NUEVO: Contador de mensajes del usuario para lógica del 3er mensaje
   userMessageCount: number = 0;
-  private readonly MESSAGES_BEFORE_PAYMENT: number = 3; // Mostrar modal al 3er mensaje
+  private readonly MESSAGES_BEFORE_PAYMENT: number = 4; // Mostrar modal al 3er mensaje
 
   private backendUrl = environment.apiUrl;
 
@@ -147,8 +147,6 @@ export class AnimalInteriorComponent
   }
 
   async ngOnInit(): Promise<void> {
-    console.log('🦉 ====== INICIANDO ANIMAL INTERIOR ======');
-
     // ✅ PASO 1: Verificar si ya está pagado (desde sessionStorage)
     this.hasUserPaidForAnimal =
       sessionStorage.getItem('hasUserPaidForAnimal_inneresTier') === 'true' ||

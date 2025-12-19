@@ -115,7 +115,7 @@ export class InformacionZodiacoComponent
 
   // ✅ Contador de mensajes del usuario para lógica del 3er mensaje
   userMessageCount: number = 0;
-  private readonly MESSAGES_BEFORE_PAYMENT: number = 3;
+  private readonly MESSAGES_BEFORE_PAYMENT: number = 4;
 
   // Configuración de la rueda de la fortuna
   showFortuneWheel: boolean = false;

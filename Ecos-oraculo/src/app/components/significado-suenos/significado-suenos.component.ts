@@ -81,7 +81,7 @@ export class SignificadoSuenosComponent
 
   // ✅ Contador de mensajes del usuario para lógica del 2do mensaje
   userMessageCount: number = 0;
-  private readonly MESSAGES_BEFORE_PAYMENT: number = 2;
+  private readonly MESSAGES_BEFORE_PAYMENT: number = 4;
 
   // Propiedad para controlar mensajes bloqueados
   blockedMessageId: string | null = null;
